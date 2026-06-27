@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "financial-advisor"
+version = "0.1.0"
+description = "Beyond GraphRAG: Explainable Financial Advisor with Knowledge Graphs and LLM Agents"
+authors = ["Alessandro Negro <alessandro@graphaware.com>"]
+readme = "README.md"
+packages = [{include = "financial_advisor", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+langchain = ">=0.3"
+langchain-openai = ">=0.2"
+langchain-neo4j = ">=0.2"
+langgraph = ">=0.2"
+docling = ">=2.0"
+pydantic-settings = ">=2.0"
+python-dotenv = ">=1.0"
+neo4j = ">=5.0"
+
+[tool.poetry.group.dev.dependencies]
+jupyter = ">=1.0"
+ipykernel = ">=6.0"
+pytest = ">=8.0"
+pytest-asyncio = ">=0.23"
+ruff = ">=0.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
