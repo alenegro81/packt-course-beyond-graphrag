@@ -1,0 +1,8 @@
+{
+  "markdown.marp.themes": [
+    "./slides/themes/course-negro.css"
+  ],
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "python.terminal.useEnvFile": true,
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+}

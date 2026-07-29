@@ -2,20 +2,20 @@
 name = "financial-advisor"
 version = "0.1.0"
 description = "Beyond GraphRAG: Explainable Financial Advisor with Knowledge Graphs and LLM Agents"
-authors = ["Alessandro Negro <alessandro@graphaware.com>"]
+authors = ["Alessandro Negro <alenegro81@gmail.com>"]
 readme = "README.md"
 packages = [{include = "financial_advisor", from = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-langchain = ">=0.3"
-langchain-openai = ">=0.2"
-langchain-neo4j = ">=0.2"
-langgraph = ">=0.2"
-docling = ">=2.0"
-pydantic-settings = ">=2.0"
-python-dotenv = ">=1.0"
-neo4j = ">=5.0"
+neo4j = "^6.2.0"
+docling = "^2.114.0"
+docling-core = "^2.87.1"
+langchain-core = "^1.5.0"
+langchain-openai = "^1.4.0"
+pydantic-settings = "^2.14.2"
+easyocr = "^1.7.2"
+
 
 [tool.poetry.group.dev.dependencies]
 jupyter = ">=1.0"

@@ -3,35 +3,69 @@
 import argparse
 from pathlib import Path
 
-from neo4j import GraphDatabase
-
-from financial_advisor.config import settings
 from financial_advisor.ingestion.docling_loader import load_filing
 from financial_advisor.ingestion.graph_writer import write_documents
 from financial_advisor.ingestion.schema import apply_schema
-from financial_advisor.clients import get_graph
+from financial_advisor.services.neo4j_service import neo4j_service
+
+
+def _parse_filing_name(stem: str) -> tuple[str, int] | None:
+    """Parse company_id and year from stems like 'APPLE_2018_10K' or '3M_2018_10K'.
+
+    Convention: {COMPANY}_{YEAR}_{...}.pdf — the first 4-digit segment is the year;
+    everything before it is the company identifier.
+    Returns (company_id, year) or None if the year cannot be found.
+    """
+    parts = stem.split("_")
+    for i, part in enumerate(parts):
+        if part.isdigit() and len(part) == 4:
+            company_id = "_".join(parts[:i]) or stem
+            return company_id, int(part)
+    return None
 
 
 def main(filings_dir: Path) -> None:
-    driver = GraphDatabase.driver(
-        settings.neo4j_uri,
-        auth=(settings.neo4j_username, settings.neo4j_password),
-    )
-    apply_schema(driver, module=1)
-    driver.close()
+    if not filings_dir.is_dir():
+        raise SystemExit(f"Directory not found: {filings_dir}")
 
-    graph = get_graph()
+    print("Applying schema …")
+    apply_schema(neo4j_service.driver, module=1)
 
-    for pdf in sorted(filings_dir.glob("**/*.pdf")):
-        company_id = pdf.parent.name
-        year = int(pdf.stem.split("_")[-1])
-        print(f"Ingesting {pdf} ...")
+    pdfs = sorted(filings_dir.glob("**/*.pdf"))
+    if not pdfs:
+        print("No PDF files found — nothing to ingest.")
+        return
+
+    print(f"Found {len(pdfs)} PDF(s) to ingest.\n")
+
+    for pdf in pdfs:
+        parsed = _parse_filing_name(pdf.stem)
+        if parsed is None:
+            print(f"[WARN] Cannot parse company/year from '{pdf.name}', skipping.")
+            continue
+        company_id, year = parsed
+
+        print(f"[{company_id}] {pdf.name} (year={year})")
         documents = load_filing(pdf, company_id=company_id, year=year)
-        write_documents(graph, documents, company_id=company_id)
+        if not documents:
+            print(f"  No chunks produced — skipping.")
+            continue
+
+        print(f"  {len(documents)} chunks extracted")
+        write_documents(documents, company_id=company_id)
+
+    neo4j_service.close()
+    print("\nIngestion complete.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("filings_dir", type=Path)
+    parser = argparse.ArgumentParser(
+        description="Ingest PDF 10-K filings into Neo4j (Module 1)."
+    )
+    parser.add_argument(
+        "filings_dir",
+        type=Path,
+        help="Root directory containing company sub-folders with PDF filings.",
+    )
     args = parser.parse_args()
     main(args.filings_dir)

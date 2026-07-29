@@ -72,6 +72,17 @@ All modules operate on the **same Neo4j database**, which grows incrementally. R
 - Module 4 adds: dynamically extracted entities and relationships (types vary)
 - Module 5 adds: `SIMILAR_TO` edges between `Chunk` nodes
 
+## Slides
+
+Course slides are authored in **Marp** (Markdown-to-slides) and live in `slides/`.
+See [slides/CLAUDE.md](slides/CLAUDE.md) for the full authoring guide: theme, layouts, build commands, and naming conventions.
+
+Quick reference:
+- Theme file: `slides/themes/course-negro.css`
+- Module decks: `slides/modules/module_0X_*.md`
+- Copy-paste template: `slides/_template.md`
+- Build to `slides/dist/`: `marp slides/modules/<file>.md --theme slides/themes/course-negro.css --allow-local-files --output slides/dist/<file>.html`
+
 ## Stack
 
 - **LLM / embeddings:** Azure OpenAI via `langchain-openai` (`AzureChatOpenAI`, `AzureOpenAIEmbeddings`)

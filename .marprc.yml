@@ -1,0 +1,14 @@
+# Marp CLI configuration
+# https://github.com/marp-team/marp-cli#configuration-file
+
+theme: slides/themes/course-negro.css
+
+# Output directory for builds
+# Override per-command with --output dist/
+# output: dist/
+
+# Enable HTML in Marp markdown (needed for custom divs)
+html: false
+
+# Allow local file access for images (needed for local assets)
+allowLocalFiles: true

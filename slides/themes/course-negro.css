@@ -1,0 +1,263 @@
+/* ============================================================
+   course-negro — Marp Theme for Beyond GraphRAG (Packt)
+   Usage: add to front matter as:  theme: course-negro
+   ============================================================ */
+
+@import "default";
+
+/* ── Brand tokens ────────────────────────────────────────── */
+:root {
+  --color-primary:    #00B4D8;   /* brand teal               */
+  --color-dark:       #0A1628;   /* deep navy                */
+  --color-accent:     #F77F00;   /* warm orange              */
+  --color-surface:    #F4F7FB;   /* light slide background   */
+  --color-text:       #1A1A2E;   /* near-black body text     */
+  --color-subtle:     #6C7A96;   /* muted labels / captions  */
+  --color-code-bg:    #0D1B2A;   /* dark code block          */
+
+  --font-heading:     "Inter", "Segoe UI", sans-serif;
+  --font-body:        "Inter", "Segoe UI", sans-serif;
+  --font-mono:        "Fira Code", "Cascadia Code", monospace;
+}
+
+/* ── Base slide ──────────────────────────────────────────── */
+section {
+  background-color: var(--color-surface);
+  color:            var(--color-text);
+  font-family:      var(--font-body);
+  font-size:        28px;
+  padding:          52px 64px;
+  width:            1280px;
+  height:           720px;
+}
+
+/* ── Headings ────────────────────────────────────────────── */
+h1 { font-size: 2em;   color: var(--color-dark);    margin-bottom: 0.2em; }
+h2 { font-size: 1.5em; color: var(--color-primary);  margin-bottom: 0.15em; }
+h3 { font-size: 1.1em; color: var(--color-accent);   margin-bottom: 0.1em; }
+
+/* ── Body text & lists ───────────────────────────────────── */
+p  { margin: 0.4em 0; line-height: 1.5; }
+
+ul, ol { padding-left: 1.4em; }
+li     { margin: 0.25em 0; line-height: 1.45; }
+li li  { font-size: 0.88em; color: var(--color-subtle); }
+
+strong { color: var(--color-primary); }
+em     { color: var(--color-accent);  font-style: normal; font-weight: 600; }
+
+/* ── Code ────────────────────────────────────────────────── */
+code {
+  font-family:      var(--font-mono);
+  background-color: #DDE6EF;
+  color:            var(--color-dark);
+  border-radius:    4px;
+  padding:          0.1em 0.35em;
+  font-size:        0.82em;
+}
+
+pre {
+  background-color: var(--color-code-bg);
+  border-radius:    8px;
+  padding:          1em 1.2em;
+  overflow:         hidden;
+}
+pre code {
+  background:  transparent;
+  color:       #C9D1D9;
+  font-size:   0.78em;
+  padding:     0;
+}
+
+/* ── Horizontal rule — used as visual divider ────────────── */
+hr {
+  border: none;
+  border-top: 3px solid var(--color-primary);
+  margin: 0.6em 0;
+  width: 72px;
+}
+
+/* ── Images ──────────────────────────────────────────────── */
+img { border-radius: 6px; }
+
+/* ── Tables ──────────────────────────────────────────────── */
+table  { border-collapse: collapse; width: 100%; font-size: 0.85em; }
+th     { background: var(--color-dark); color: #fff; padding: 0.5em 0.8em; text-align: left; }
+td     { padding: 0.4em 0.8em; border-bottom: 1px solid #DDEAF5; }
+tr:nth-child(even) td { background: #EEF4FB; }
+
+/* ── Footer / pagination ─────────────────────────────────── */
+footer {
+  font-size:   0.6em;
+  color:       var(--color-subtle);
+  position:    absolute;
+  bottom:      22px;
+  left:        64px;
+  right:       64px;
+  display:     flex;
+  justify-content: space-between;
+}
+
+section::after {
+  font-size:   0.6em;
+  color:       var(--color-subtle);
+}
+
+/* ================================================================
+   LAYOUT CLASSES — apply via <!-- _class: layout-name -->
+   ================================================================ */
+
+/* ── 1. Title slide ──────────────────────────────────────── */
+section.title {
+  background-color: var(--color-dark);
+  color:            #fff;
+  justify-content:  center;
+  display:          flex;
+  flex-direction:   column;
+  padding:          72px 80px;
+}
+section.title h1 {
+  font-size:   2.4em;
+  color:       #fff;
+  line-height: 1.15;
+  max-width:   900px;
+}
+section.title h2 {
+  font-size:   1em;
+  color:       var(--color-primary);
+  font-weight: 400;
+  margin-top:  0.5em;
+}
+section.title p {
+  color:      var(--color-subtle);
+  font-size:  0.75em;
+  margin-top: 2em;
+}
+
+/* ── 2. Section divider ──────────────────────────────────── */
+section.divider {
+  background: linear-gradient(135deg, var(--color-dark) 0%, #0F2A4A 100%);
+  color:      #fff;
+  display:    flex;
+  flex-direction: column;
+  justify-content: center;
+  padding:    72px 80px;
+}
+section.divider h1 {
+  font-size:  2.6em;
+  color:      var(--color-primary);
+  line-height: 1.2;
+}
+section.divider h2 {
+  font-size:  1em;
+  color:      rgba(255,255,255,0.6);
+  font-weight: 400;
+  margin-top: 0.4em;
+}
+
+/* ── 3. Full-image (image fills entire slide) ────────────── */
+section.image-full {
+  padding: 0;
+}
+section.image-full > p:first-child img,
+section.image-full > img:first-child {
+  position:   absolute;
+  inset:      0;
+  width:      100%;
+  height:     100%;
+  object-fit: cover;
+  border-radius: 0;
+}
+/* Optional caption overlay at the bottom */
+section.image-full figcaption,
+section.image-full p:last-child {
+  position:   absolute;
+  bottom:     32px;
+  left:       0;
+  right:      0;
+  text-align: center;
+  color:      #fff;
+  font-size:  0.72em;
+  background: rgba(10,22,40,0.55);
+  padding:    0.4em 1em;
+}
+
+/* ── 4. Split — image RIGHT (content left, image right) ─── */
+/*    Use standard Marp image syntax: ![bg right:45%](img)   */
+section.split-right h1 { font-size: 1.6em; }
+section.split-right ul { font-size: 0.88em; }
+
+/* ── 5. Split — image LEFT (image left, content right) ─────*/
+/*    Use standard Marp image syntax: ![bg left:45%](img)    */
+section.split-left h1 { font-size: 1.6em; }
+section.split-left ul { font-size: 0.88em; }
+
+/* ── 6. Two-column text layout ───────────────────────────── */
+section.cols-2 {
+  display:     grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows:    auto 1fr;
+  column-gap:  48px;
+}
+section.cols-2 h1 {
+  grid-column: 1 / -1;
+  font-size:   1.6em;
+  margin-bottom: 0.4em;
+}
+
+/* ── 7. Three-column text layout ─────────────────────────── */
+section.cols-3 {
+  display:     grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows:    auto 1fr;
+  column-gap:  36px;
+}
+section.cols-3 h1 {
+  grid-column: 1 / -1;
+  font-size:   1.5em;
+  margin-bottom: 0.4em;
+}
+section.cols-3 h3 {
+  font-size:   0.9em;
+  margin-bottom: 0.2em;
+}
+
+/* ── 8. Code-focus (larger code block, minimal prose) ───── */
+section.code-focus {
+  padding: 44px 56px;
+}
+section.code-focus h1 { font-size: 1.4em; margin-bottom: 0.3em; }
+section.code-focus pre { font-size: 0.85em; }
+
+/* ── 9. Quote / highlight ────────────────────────────────── */
+section.quote {
+  background: var(--color-dark);
+  color:      #fff;
+  display:    flex;
+  flex-direction: column;
+  justify-content: center;
+  padding:    72px 100px;
+}
+section.quote blockquote {
+  border-left: 6px solid var(--color-primary);
+  padding-left: 1.2em;
+  font-size:  1.25em;
+  line-height: 1.5;
+  color:      #fff;
+  font-style: normal;
+}
+section.quote blockquote::before { content: none; }
+section.quote p { color: var(--color-subtle); font-size: 0.78em; margin-top: 1.2em; }
+
+/* ── 10. Demo / live-coding indicator ────────────────────── */
+section.demo {
+  background: #0D2137;
+  color:      #C9D1D9;
+  display:    flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+section.demo h1 { color: var(--color-accent); font-size: 2.2em; }
+section.demo p  { color: rgba(255,255,255,0.55); font-size: 0.85em; }
