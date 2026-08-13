@@ -7,14 +7,18 @@ readme = "README.md"
 packages = [{include = "financial_advisor", from = "src"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.15"
 neo4j = "^6.2.0"
 docling = "^2.114.0"
 docling-core = "^2.87.1"
 langchain-core = "^1.5.0"
 langchain-openai = "^1.4.0"
+langchain-neo4j = "^0.10.0"
 pydantic-settings = "^2.14.2"
 easyocr = "^1.7.2"
+sentence-transformers = "^5.6.1"
+sentencepiece = "^0.2.2"
+langgraph = "^1.2.11"
 
 
 [tool.poetry.group.dev.dependencies]
