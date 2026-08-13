@@ -3,9 +3,10 @@
 import argparse
 from pathlib import Path
 
-from financial_advisor.ingestion.docling_loader import load_filing
+from financial_advisor.ingestion.document_loader import add_embeddings, load_from_path
 from financial_advisor.ingestion.graph_writer import write_documents
-from financial_advisor.ingestion.schema import apply_schema
+from financial_advisor.ingestion.schema import apply_basic_schema, apply_embedding_schema
+from financial_advisor.services.embedding_service import embedding_service
 from financial_advisor.services.neo4j_service import neo4j_service
 
 
@@ -29,7 +30,8 @@ def main(filings_dir: Path) -> None:
         raise SystemExit(f"Directory not found: {filings_dir}")
 
     print("Applying schema …")
-    apply_schema(neo4j_service.driver, module=1)
+    apply_basic_schema()
+    apply_embedding_schema(embedding_service.dimensions)
 
     pdfs = sorted(filings_dir.glob("**/*.pdf"))
     if not pdfs:
@@ -46,12 +48,13 @@ def main(filings_dir: Path) -> None:
         company_id, year = parsed
 
         print(f"[{company_id}] {pdf.name} (year={year})")
-        documents = load_filing(pdf, company_id=company_id, year=year)
+        documents = load_from_path(pdf, company_id=company_id, year=year)
         if not documents:
             print(f"  No chunks produced — skipping.")
             continue
 
         print(f"  {len(documents)} chunks extracted")
+        documents = add_embeddings(documents)
         write_documents(documents, company_id=company_id)
 
     neo4j_service.close()

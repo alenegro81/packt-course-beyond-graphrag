@@ -9,7 +9,8 @@ def write_documents(documents: list[Document], company_id: str) -> None:
     """Write chunked documents to Neo4j as (Company)-[:HAS_DOCUMENT]->(Document)-[:HAS_CHUNK]->(Chunk).
 
     Idempotent: documents already present in the graph are skipped.
-    Embeddings are left empty (populated in a later module).
+    Chunk.embedding is populated when metadata["embedding"] is present (see
+    ingestion.document_loader.add_embeddings), otherwise left unset.
     """
     by_doc: dict[str, list[Document]] = defaultdict(list)
     for doc in documents:
@@ -63,6 +64,7 @@ def write_documents(documents: list[Document], company_id: str) -> None:
                 "pages": chunk.metadata.get("pages", []),
                 "doc_id": doc_id,
                 "company_id": company_id,
+                "embedding": chunk.metadata.get("embedding"),
             }
             for chunk in chunks
         ]
@@ -70,8 +72,7 @@ def write_documents(documents: list[Document], company_id: str) -> None:
         neo4j_service.run_query(
             """
             UNWIND $rows AS row
-            CALL {
-                WITH row
+            CALL (row) {
                 MATCH (d:Document {id: row.doc_id})
                 CREATE (ch:Chunk {
                     id:         row.id,
@@ -79,7 +80,8 @@ def write_documents(documents: list[Document], company_id: str) -> None:
                     idx:        row.idx,
                     pages:      row.pages,
                     doc_id:     row.doc_id,
-                    company_id: row.company_id
+                    company_id: row.company_id,
+                    embedding:  row.embedding
                 })
                 CREATE (d)-[:HAS_CHUNK]->(ch)
             } IN TRANSACTIONS OF 100 ROWS

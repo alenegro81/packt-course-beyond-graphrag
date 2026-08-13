@@ -1,23 +1,18 @@
 """Module 3 — extend the graph with structured data: executives, events, news."""
 
-from neo4j import GraphDatabase
-
 from financial_advisor.clients import get_graph
-from financial_advisor.config import settings
 from financial_advisor.enrichment.graph_writer import write_executives, write_news
 from financial_advisor.enrichment.loaders import load_executives, load_news
-from financial_advisor.ingestion.schema import apply_schema
+from financial_advisor.ingestion.schema import apply_basic_schema
+
+# TODO(module 3): introduce apply_enrichment_schema() for CONSTRAINTS_M3/INDEXES_M3
+# once Person/Event/Article ingestion is implemented.
 
 COMPANIES = []  # populate with company IDs before running
 
 
 def main() -> None:
-    driver = GraphDatabase.driver(
-        settings.neo4j_uri,
-        auth=(settings.neo4j_username, settings.neo4j_password),
-    )
-    apply_schema(driver, module=3)
-    driver.close()
+    apply_basic_schema()
 
     graph = get_graph()
 

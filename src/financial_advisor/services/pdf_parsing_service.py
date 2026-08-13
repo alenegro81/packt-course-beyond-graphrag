@@ -21,7 +21,7 @@ class ChunkResult:
     pages: list[int] = field(default_factory=list)
 
 
-class DoclingService:
+class PdfParsingService:
     def __init__(self, chunk_max_tokens: int = 4096, num_threads: int = 4) -> None:
         pipeline_options = ThreadedPdfPipelineOptions(
             do_table_structure=True,
@@ -136,4 +136,4 @@ class DoclingService:
         }
 
 
-docling_service = DoclingService()
+pdf_parsing_service = PdfParsingService()

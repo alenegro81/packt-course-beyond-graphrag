@@ -7,7 +7,7 @@ from financial_advisor.config import settings
 
 
 @lru_cache
-def get_llm(temperature: float = 0) -> AzureChatOpenAI:
+def get_llm(temperature: float = 1) -> AzureChatOpenAI:
     return AzureChatOpenAI(
         azure_endpoint=settings.azure_openai_endpoint,
         azure_deployment=settings.azure_openai_chat_deployment,
