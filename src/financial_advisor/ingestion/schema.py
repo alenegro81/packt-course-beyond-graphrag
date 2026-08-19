@@ -53,6 +53,42 @@ def apply_embedding_schema(dimensions: int) -> None:
     _run_statements([statement])
 
 
+# Module 2 — agentic retrieval needs to filter by filing year, not just company
+def apply_agentic_schema(dimensions: int) -> None:
+    """Backfill Chunk.year from Document.year, and upgrade chunk_embedding to a multi-property
+    vector index (company_id, year) so semantic_search can pre-filter by both in-index instead
+    of over-fetching and filtering in Cypher afterward. Requires Cypher 25 (Neo4j 2026.01+)."""
+    result = neo4j_service.run_query(
+        """
+        MATCH (d:Document)-[:HAS_CHUNK]->(ch:Chunk)
+        WHERE ch.year IS NULL
+        SET ch.year = d.year
+        RETURN count(ch) AS backfilled
+        """
+    )
+    print(f"  [schema] backfilled year on {result[0]['backfilled']} chunk(s)")
+
+    existing = neo4j_service.run_query(
+        "SHOW INDEXES YIELD name, properties WHERE name = 'chunk_embedding' RETURN properties"
+    )
+    if existing and "year" in existing[0]["properties"]:
+        print("  [schema] chunk_embedding already has company_id/year filters — skipping rebuild")
+        return
+
+    neo4j_service.run_query("DROP INDEX chunk_embedding IF EXISTS")
+    neo4j_service.run_query(
+        f"""
+        CYPHER 25
+        CREATE VECTOR INDEX chunk_embedding IF NOT EXISTS
+        FOR (n:Chunk) ON n.embedding
+        WITH [n.company_id, n.year]
+        OPTIONS {{indexConfig: {{`vector.dimensions`: {dimensions},
+                                  `vector.similarity_function`: 'cosine'}}}}
+        """
+    )
+    print("  [schema] rebuilt chunk_embedding with company_id/year pre-filters")
+
+
 # Module 3 — people, events, news
 CONSTRAINTS_M3 = [
     "CREATE CONSTRAINT person_id IF NOT EXISTS FOR (n:Person) REQUIRE n.id IS UNIQUE",

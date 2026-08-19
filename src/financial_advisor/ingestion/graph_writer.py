@@ -74,6 +74,7 @@ def write_documents(documents: list[Document], company_id: str) -> None:
                 "pages": chunk.metadata.get("pages", []),
                 "doc_id": doc_id,
                 "company_id": company_id,
+                "year": chunk.metadata.get("year"),
                 "embedding": chunk.metadata.get("embedding"),
             }
             for chunk in chunks
@@ -91,6 +92,7 @@ def write_documents(documents: list[Document], company_id: str) -> None:
                     pages:      row.pages,
                     doc_id:     row.doc_id,
                     company_id: row.company_id,
+                    year:       row.year,
                     embedding:  row.embedding
                 })
                 CREATE (d)-[:HAS_CHUNK]->(ch)
