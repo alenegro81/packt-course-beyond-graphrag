@@ -6,6 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Packt course: **Beyond GraphRAG — Building an Explainable Financial Advisor with Knowledge Graphs, Neo4j, and LLM Agents**. The project ingests corporate filings (10-Ks), news, and executive data into a Neo4j knowledge graph, then answers complex financial questions via a LangGraph agentic retrieval loop.
 
+## Development docs (`docs/`)
+
+`docs/` is a local, **git-ignored** working directory for planning and continuity across
+sessions — it is not part of the committed course deliverable. At the start of any work on this
+project, read `docs/STATUS.md` (current progress + latest session log) and `docs/ARCHITECTURE.md`
+(current-state architecture summary) before re-deriving context from code. Use `docs/PLAN.md`
+for module-by-module scope — it mirrors the 7 course modules and tracks what's done vs. planned.
+
+- `docs/PLAN.md` — implementation plan, one section per module, checklist form
+- `docs/ARCHITECTURE.md` — data flow, schema, key files, stack, cross-module conventions
+- `docs/adr/` — architecture decision records; add one whenever a non-obvious choice is made
+  (a tradeoff, a rejected alternative, something a future session shouldn't silently redo)
+- `docs/STATUS.md` — rollup status vs. `PLAN.md`, points at the latest file in `docs/sessions/`
+- `docs/sessions/YYYY-MM-DD-slug.md` — per-session detail: what was touched, what's left
+  mid-flight, gotchas hit
+
+At a natural checkpoint (module scope finished, or a session ending with work left mid-flight),
+update `docs/STATUS.md` and write a session log. If `docs/` is missing (fresh clone — it's
+git-ignored so a clean checkout won't have it), recreate the structure described above before
+continuing, using this section as the spec.
+
 ## Setup
 
 ```bash
