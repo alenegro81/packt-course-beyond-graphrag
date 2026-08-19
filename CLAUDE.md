@@ -15,6 +15,8 @@ cp .env.example .env   # fill in Azure OpenAI and Neo4j credentials
 
 `.env.example` ships with placeholder Azure OpenAI values (`your-api-key`, `https://your-resource.openai.azure.com/`). Embeddings are fully local (see Stack below) so they work with placeholders still in place, but anything that calls the chat LLM (`clients.get_llm()` — the QA/agent answer-generation step) will fail with a DNS-lookup `ConnectError` until `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_CHAT_DEPLOYMENT` are set to real values.
 
+`NYT_API_KEY` (free key: https://developer.nytimes.com/get-started) is only needed for `enrichment.loaders.load_news` (Module 3 news enrichment); `load_executives` (Wikidata) needs no key.
+
 The local embedding model (`BAAI/bge-m3`, ~2.3GB) downloads from Hugging Face on first use of `embedding_service` — the first cell that touches it in each notebook session will be slow.
 
 ## Common commands
@@ -70,13 +72,14 @@ All modules operate on the **same Neo4j database**, which grows incrementally. R
 - [src/financial_advisor/ingestion/document_loader.py](src/financial_advisor/ingestion/document_loader.py) — `load_from_path` (PDF → chunked `Document`s) + `add_embeddings` (batched, sets `metadata["embedding"]`)
 - [src/financial_advisor/ingestion/schema.py](src/financial_advisor/ingestion/schema.py) — Cypher `CREATE CONSTRAINT` / `CREATE INDEX` statements, one `apply_*_schema()` function per module (`apply_basic_schema`, `apply_embedding_schema(dimensions)`, ...); all idempotent (`IF NOT EXISTS`)
 - [src/financial_advisor/qa/baseline.py](src/financial_advisor/qa/baseline.py) — Module 1's one-shot RAG baseline (`embed_question` → `retrieve_chunks` → `build_context` → `generate_answer`); kept separate from `retrieval/`/`agent/` as the "before" side of the Module 2 comparison
-- [src/financial_advisor/agent/graph.py](src/financial_advisor/agent/graph.py) — `build_agent()`: compiles the Module 2 agentic retrieval loop (5-node `StateGraph`: `retriever_strategy` → `call_tools` → `evaluate_retrieval` ⇄ retry, then `generate_answer` → `evaluate_answer` ⇄ retry-answer/retry-retrieval/end). `agent/nodes.py` holds the node functions (each callable standalone), `agent/state.py` the `AgentState` TypedDict plus the `RetrievalGrade`/`AnswerGrade` structured-output schemas, `agent/tools.py` the three retrieval tools (`semantic_search`, `fulltext_search`, `get_document_pages`) wrapping `retrieval/vector.py`/`keyword.py`/`graph_nav.py` — all on `services.neo4j_service`/`embedding_service`, matching Module 1
+- [src/financial_advisor/agent/graph.py](src/financial_advisor/agent/graph.py) — `build_agent()`: compiles the Module 2 agentic retrieval loop (5-node `StateGraph`: `retriever_strategy` → `call_tools` → `evaluate_retrieval` ⇄ retry, then `generate_answer` → `evaluate_answer` ⇄ retry-answer/retry-retrieval/end). `agent/nodes.py` holds the node functions (each callable standalone), `agent/state.py` the `AgentState` TypedDict plus the `RetrievalGrade`/`AnswerGrade` structured-output schemas, `agent/tools.py` the four retrieval tools (`semantic_search`, `fulltext_search`, `get_document_pages`, `get_executives`) wrapping `retrieval/vector.py`/`keyword.py`/`graph_nav.py` — all on `services.neo4j_service`/`embedding_service`, matching Module 1
+- [src/financial_advisor/enrichment/loaders.py](src/financial_advisor/enrichment/loaders.py) — Module 3 sources: `load_executives` (Wikidata SPARQL — officers/board members plus each person's `career_history` and Wikipedia bio) and `load_news` (NYT Article Search API, needs `NYT_API_KEY`); `enrichment/graph_writer.py` — `write_executives`/`write_news` upsert the resulting `Person`/`Article` nodes and `ROLE_AT`/`MENTIONED_IN` edges
 - [src/financial_advisor/extraction/validators.py](src/financial_advisor/extraction/validators.py) — Pydantic output schemas shared across extraction and tests
 - [src/financial_advisor/text2cypher/validator.py](src/financial_advisor/text2cypher/validator.py) — write-operation guardrails for generated Cypher
 
 **Graph schema (cumulative):**
 - Module 1: `Company`, `Document`, `Chunk` (with `Chunk.embedding`) + fulltext index (`apply_basic_schema`) + vector index on `Chunk.embedding` sized to `embedding_service.dimensions` (`apply_embedding_schema`). A vector index's dimension can't change in place — switching embedding models means dropping `chunk_embedding` before recreating it (see the guard cell in `notebooks/module_01_baseline.ipynb`, section 2).
-- Module 3 adds: `Person`, `Event`, `Article`; relationships `ROLE_AT`, `MENTIONED_IN` (constants exist in `schema.py` as `CONSTRAINTS_M3`/`INDEXES_M3`, not yet wired into an `apply_enrichment_schema()`)
+- Module 3 adds: `Person`, `Event`, `Article`; relationships `ROLE_AT`, `MENTIONED_IN` (`apply_enrichment_schema()` in `schema.py` applies the `CONSTRAINTS_M3`/`INDEXES_M3` constants)
 - Module 4 adds: dynamically extracted entities and relationships (types vary)
 - Module 5 adds: `SIMILAR_TO` edges between `Chunk` nodes
 

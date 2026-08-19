@@ -63,3 +63,8 @@ CONSTRAINTS_M3 = [
 INDEXES_M3 = [
     "CREATE FULLTEXT INDEX article_text IF NOT EXISTS FOR (n:Article) ON EACH [n.title, n.text]",
 ]
+
+
+def apply_enrichment_schema() -> None:
+    """Constraints + fulltext index for the Module 3 people/events/news additions."""
+    _run_statements(CONSTRAINTS_M3 + INDEXES_M3)

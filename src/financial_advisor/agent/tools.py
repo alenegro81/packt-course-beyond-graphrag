@@ -37,5 +37,17 @@ def get_document_pages(doc_id: str, pages: list[int], limit: int = 20) -> list[d
     return graph_nav.get_document_pages(doc_id, pages, limit=limit)
 
 
-TOOLS = [semantic_search, fulltext_search, get_document_pages]
+@tool
+def get_executives(company_id: str) -> list[dict]:
+    """Look up a company's executives and board members, with bio and career history elsewhere.
+
+    Use for questions about a company's leadership, officers, board composition, or an
+    executive's background — the 10-K filings name officers but don't carry biographical detail
+    (that's deferred to the proxy statement, which isn't in this corpus). Set company_id (e.g.
+    "3M", "APPLE").
+    """
+    return graph_nav.get_executives(company_id)
+
+
+TOOLS = [semantic_search, fulltext_search, get_document_pages, get_executives]
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}

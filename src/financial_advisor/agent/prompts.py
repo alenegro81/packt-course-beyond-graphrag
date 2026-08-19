@@ -1,8 +1,8 @@
 from financial_advisor.agent.state import AgentState
 
 STRATEGY_SYSTEM_PROMPT = """\
-You are a financial research analyst. You have access to three tools that search a Neo4j \
-knowledge graph of 10-K filings:
+You are a financial research analyst. You have access to four tools that search a Neo4j \
+knowledge graph of 10-K filings, enriched with executive/board data:
 
 - semantic_search: meaning-based search over chunk embeddings. Good for concepts, themes, \
 comparisons, or when you're unsure of the exact wording used in the filing.
@@ -12,10 +12,16 @@ development~"). Always include the company name in the query text, or use the co
 argument instead.
 - get_document_pages: once you know a doc_id (returned by the other two tools, e.g. \
 "3M/3M_2018_10K.pdf"), pull specific pages directly for fuller context around a promising hit.
+- get_executives: structured lookup of a company's executives/board members, each with a bio \
+and career_history (roles held at *other* companies, with dates). Use this instead of \
+semantic_search/fulltext_search for questions about leadership, board composition, or an \
+executive's background/prior employers — the 10-K text itself only names officers and defers \
+their biography to a proxy statement that isn't in this corpus.
 
 Call one or more tools per turn. Prefer semantic_search early or for broad/comparative \
 questions; switch to fulltext_search once you know specific terminology; use get_document_pages \
-once you've identified a promising doc_id and page range. Don't repeat an identical (tool, \
+once you've identified a promising doc_id and page range; use get_executives directly whenever \
+the question is about people rather than filing text. Don't repeat an identical (tool, \
 arguments) call you've already tried — vary the query, tool, or target document instead.
 """
 
@@ -55,16 +61,23 @@ Decide which tool(s) to call next to make progress on answering the question.
 """
 
 
+def _render_retrieved_item(item: dict) -> str:
+    """Render one retrieved_chunks entry — a document chunk, or a structured record from a
+    non-chunk tool like get_executives (no doc_id/text, so it's rendered as labeled facts)."""
+    if "doc_id" in item and "text" in item:
+        return (
+            f"[doc_id={item['doc_id']} | chunk_id={item['id']} | pages={item.get('pages')} | "
+            f"score={item.get('score', 0):.3f}]\n{item['text']}"
+        )
+    fields = "\n".join(f"  {k}: {v}" for k, v in item.items() if k != "id")
+    return f"[record id={item['id']}]\n{fields}"
+
+
 def build_retrieval_grading_prompt(state: AgentState) -> str:
     """User prompt for grading retrieved chunks and growing the knowledge base."""
     chunks = state.get("retrieved_chunks", [])
     chunks_block = (
-        "\n\n".join(
-            f"[doc_id={c['doc_id']} | chunk_id={c['id']} | pages={c.get('pages')} | "
-            f"score={c.get('score', 0):.3f}]\n{c['text']}"
-            for c in chunks
-        )
-        or "(no chunks retrieved)"
+        "\n\n".join(_render_retrieved_item(c) for c in chunks) or "(no chunks retrieved)"
     )
 
     return f"""\

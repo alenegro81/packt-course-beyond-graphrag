@@ -22,5 +22,8 @@ class Settings(BaseSettings):
     neo4j_password: str
     neo4j_database: str = "neo4j"
 
+    # NYT Article Search API (Module 3 — news enrichment)
+    nyt_api_key: str = ""
+
 
 settings = Settings()

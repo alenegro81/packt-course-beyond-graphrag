@@ -19,3 +19,28 @@ def get_document_pages(doc_id: str, pages: list[int], limit: int = 20) -> list[d
         {"doc_id": doc_id, "pages": pages, "limit": limit},
     )
     return rows
+
+
+def get_executives(company_id: str) -> list[dict]:
+    """Return people with a ROLE_AT the given company, with bio and career history elsewhere.
+
+    career_history covers roles the same person held at *other* companies (board seats, prior
+    employers) — this is what fills the gap where a 10-K names its officers but defers their
+    biographical/career detail to a proxy statement that was never ingested.
+    """
+    rows = neo4j_service.run_query(
+        """
+        MATCH (p:Person)-[r:ROLE_AT]->(c:Company {id: $company_id})
+        WITH p, collect({title: r.title, start: r.start, end: r.end}) AS roles
+        OPTIONAL MATCH (p)-[r2:ROLE_AT]->(other:Company)
+        WHERE other.id <> $company_id
+        WITH p, roles, collect(
+            CASE WHEN other IS NULL THEN null
+                 ELSE {company: other.name, title: r2.title, start: r2.start, end: r2.end} END
+        ) AS raw_history
+        RETURN p.id AS id, p.name AS name, p.bio AS bio, roles,
+               [x IN raw_history WHERE x IS NOT NULL] AS career_history
+        """,
+        {"company_id": company_id},
+    )
+    return rows

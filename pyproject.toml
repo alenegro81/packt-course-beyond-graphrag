@@ -19,6 +19,7 @@ easyocr = "^1.7.2"
 sentence-transformers = "^5.6.1"
 sentencepiece = "^0.2.2"
 langgraph = "^1.2.11"
+httpx = "^0.28.1"
 
 
 [tool.poetry.group.dev.dependencies]
