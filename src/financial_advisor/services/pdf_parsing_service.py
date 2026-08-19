@@ -37,7 +37,7 @@ class PdfParsingService:
             table_batch_size=128,
         )
         pipeline_options.table_structure_options.do_cell_matching = True
-        pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+        pipeline_options.table_structure_options.mode = TableFormerMode.FAST #ACCURATE
         pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=False, lang=["en"])
 
         self.doc_converter = DocumentConverter(
