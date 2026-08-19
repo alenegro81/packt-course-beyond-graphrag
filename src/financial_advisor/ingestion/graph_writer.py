@@ -5,6 +5,20 @@ from langchain_core.documents import Document
 from financial_advisor.services.neo4j_service import neo4j_service
 
 
+def document_exists(company_id: str, doc_name: str) -> bool:
+    """Check whether a document has already been ingested for this company.
+
+    Call this before the (expensive) PDF parsing + embedding steps, so already-ingested
+    filings can be skipped without re-parsing them.
+    """
+    doc_id = f"{company_id}/{doc_name}"
+    existing = neo4j_service.run_query(
+        "MATCH (d:Document {id: $id}) RETURN d.id AS id LIMIT 1",
+        {"id": doc_id},
+    )
+    return bool(existing)
+
+
 def write_documents(documents: list[Document], company_id: str) -> None:
     """Write chunked documents to Neo4j as (Company)-[:HAS_DOCUMENT]->(Document)-[:HAS_CHUNK]->(Chunk).
 
@@ -19,11 +33,7 @@ def write_documents(documents: list[Document], company_id: str) -> None:
     for doc_name, chunks in by_doc.items():
         doc_id = f"{company_id}/{doc_name}"
 
-        existing = neo4j_service.run_query(
-            "MATCH (d:Document {id: $id}) RETURN d.id AS id LIMIT 1",
-            {"id": doc_id},
-        )
-        if existing:
+        if document_exists(company_id, doc_name):
             print(f"  Skipping {doc_name} — already in graph")
             continue
 
