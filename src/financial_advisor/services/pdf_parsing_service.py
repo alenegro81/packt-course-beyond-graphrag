@@ -4,7 +4,6 @@ from pathlib import Path
 from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
 from docling.datamodel.base_models import ConversionStatus, InputFormat
 from docling.datamodel.pipeline_options import (
-    EasyOcrOptions,
     TableFormerMode,
     ThreadedPdfPipelineOptions,
 )
@@ -23,22 +22,24 @@ class ChunkResult:
 
 class PdfParsingService:
     def __init__(self, chunk_max_tokens: int = 4096, num_threads: int = 4) -> None:
+        # 10-K filings are digitally-native PDFs (embedded text, no scanned pages), so OCR is
+        # skipped entirely. Batch sizes and images_scale are kept close to Docling's own
+        # defaults (4 / 1.0) — the previous 128 / 3.0 settings meant the threaded pipeline
+        # could hold most of an 80-180 page filing in memory at once, across every stage.
         pipeline_options = ThreadedPdfPipelineOptions(
-            do_table_structure=True,
-            do_ocr=True,
+            do_table_structure=False,
+            do_ocr=False,
             generate_page_images=False,
-            images_scale=3.0,
             accelerator_options=AcceleratorOptions(
                 device=AcceleratorDevice.AUTO,
                 num_threads=num_threads,
             ),
-            ocr_batch_size=128,
-            layout_batch_size=128,
-            table_batch_size=128,
+            ocr_batch_size=8,
+            layout_batch_size=8,
+            table_batch_size=8,
         )
         pipeline_options.table_structure_options.do_cell_matching = True
         pipeline_options.table_structure_options.mode = TableFormerMode.FAST #ACCURATE
-        pipeline_options.ocr_options = EasyOcrOptions(force_full_page_ocr=False, lang=["en"])
 
         self.doc_converter = DocumentConverter(
             format_options={

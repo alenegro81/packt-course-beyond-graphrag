@@ -11,7 +11,7 @@ titles. Combine terms with AND/OR; use ~ for single-word fuzzy matching (e.g. "r
 development~"). Always include the company name in the query text, or use the company_id \
 argument instead.
 - get_document_pages: once you know a doc_id (returned by the other two tools, e.g. \
-"3M/3M_2018_10K.pdf"), pull specific pages directly for fuller context around a promising hit.
+"3M/3M_2024_10K.pdf"), pull specific pages directly for fuller context around a promising hit.
 - get_executives: structured lookup of a company's executives/board members, each with a bio \
 and career_history (roles held at *other* companies, with dates). Use this instead of \
 semantic_search/fulltext_search for questions about leadership, board composition, or an \
