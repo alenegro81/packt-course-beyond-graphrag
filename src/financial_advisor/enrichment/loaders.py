@@ -12,6 +12,9 @@ WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
 WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
 NYT_SEARCH_URL = "https://api.nytimes.com/svc/search/v2/articlesearch.json"
+# Sharadar's own API, NOT proxied through Nasdaq Data Link's "datatables" REST API — see
+# adr/0005's amendment. https://sharadar.com/docs/getting-started for the endpoint reference.
+SHARADAR_BASE_URL = "https://api.sharadar.com/v1.0/data"
 
 USER_AGENT = "BeyondGraphRAGCourse/0.1 (Packt course notebook; contact: alenegro81@gmail.com)"
 
@@ -20,9 +23,15 @@ COMPANY_WIKIDATA_QID = {"3M": "Q159433", "APPLE": "Q312"}
 COMPANY_DISPLAY_NAME = {"3M": "3M", "APPLE": "Apple Inc."}
 _QID_TO_COMPANY_ID = {qid: company_id for company_id, qid in COMPANY_WIKIDATA_QID.items()}
 
-# The fiscal year of the 10-Ks ingested in Module 1 — scopes the board roster to the people
-# actually relevant to those filings, instead of pulling decades of historical turnover.
-FILING_YEAR = 2018
+# The most recent fiscal year among the 10-Ks ingested in Module 1 — scopes the board roster to
+# the people actually relevant to those filings (both 2024 and 2025 are in the corpus; 2025 is
+# used as "current" since a person holding a role through 2025 also covers the 2024 filing).
+# Keep this in sync with whatever's actually ingested — nothing derives it automatically.
+# Caveat: Wikidata's org-level CEO/chairperson claims (P169/P488) reflect the officer as of
+# whenever Wikidata was last edited, not as of FILING_YEAR — the cross-check against each
+# person's own dated P39 tenure history (_matches_filing_year) can undercount if a company has
+# since named a newer CEO/chairperson that Wikidata hasn't recorded a dated P39 entry for yet.
+FILING_YEAR = 2025
 
 
 def _sparql(query: str) -> list[dict]:
@@ -259,6 +268,99 @@ def load_executives(company_id: str) -> list[dict]:
     return executives
 
 
+def _profile_query(qid: str) -> str:
+    return f"""
+    SELECT ?industryLabel ?inception ?hqLabel ?exchangeLabel ?ticker WHERE {{
+      VALUES ?company {{ wd:{qid} }}
+      OPTIONAL {{ ?company wdt:P452 ?industry }}
+      OPTIONAL {{ ?company wdt:P571 ?inception }}
+      OPTIONAL {{ ?company wdt:P159 ?hq }}
+      OPTIONAL {{
+        ?company p:P414 ?exchangeStmt .
+        ?exchangeStmt ps:P414 ?exchange .
+        OPTIONAL {{ ?exchangeStmt pq:P249 ?ticker }}
+      }}
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+    }}
+    """
+
+
+def _structure_query(qid: str) -> str:
+    return f"""
+    SELECT ?company ?companyLabel ?relation WHERE {{
+      {{ wd:{qid} wdt:P749 ?company . BIND("parent" AS ?relation) }}
+      UNION
+      {{ wd:{qid} wdt:P355 ?company . BIND("subsidiary" AS ?relation) }}
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+    }}
+    """
+
+
+# A company can have several P414 (stock exchange) statements — e.g. Apple is Wikidata-listed
+# on both Nasdaq (AAPL) and the Tokyo Stock Exchange (6689, a secondary/depositary listing).
+# SPARQL row order across these is arbitrary, so picking "the first row" can silently grab a
+# secondary listing instead of the primary one. Sharadar only covers US-listed securities, so
+# prefer a US exchange when one is present; found live on 2026-08-26 (Apple resolving to Tokyo)
+# while checking why Sharadar fundamentals came back empty for a ticker Sharadar's never heard of.
+PREFERRED_EXCHANGES = ("nasdaq", "new york stock exchange", "nyse")
+
+
+def _parse_profile_rows(rows: list[dict]) -> dict:
+    """Collapse possibly-several profile rows (one exchange statement can multiply the join)
+    into a single set of facts: first non-null value seen for industry/founded/hq, but the
+    exchange/ticker pair prefers a major US exchange (see PREFERRED_EXCHANGES) over just
+    whichever row SPARQL happened to return first.
+    """
+    profile: dict = {"industry": None, "founded": None, "hq": None, "exchange": None, "ticker": None}
+    for row in rows:
+        if profile["industry"] is None and row.get("industryLabel"):
+            profile["industry"] = row["industryLabel"]["value"]
+        if profile["founded"] is None and row.get("inception"):
+            profile["founded"] = _year(row["inception"]["value"])
+        if profile["hq"] is None and row.get("hqLabel"):
+            profile["hq"] = row["hqLabel"]["value"]
+
+        exchange_label = row.get("exchangeLabel", {}).get("value")
+        if not exchange_label:
+            continue
+        is_preferred = exchange_label.lower() in PREFERRED_EXCHANGES
+        already_preferred = (profile["exchange"] or "").lower() in PREFERRED_EXCHANGES
+        if profile["exchange"] is None or (is_preferred and not already_preferred):
+            profile["exchange"] = exchange_label
+            profile["ticker"] = row["ticker"]["value"] if row.get("ticker") else None
+    return profile
+
+
+def _parse_structure_rows(rows: list[dict]) -> dict:
+    parent = None
+    subsidiaries = []
+    for row in rows:
+        company_qid = _qid_from_uri(row["company"]["value"])
+        name = row.get("companyLabel", {}).get("value")
+        if not name or name == company_qid:
+            continue  # unresolved label — data-quality noise, skip
+        entry = {"id": company_qid, "name": name}
+        if row["relation"]["value"] == "parent":
+            parent = entry
+        else:
+            subsidiaries.append(entry)
+    return {"parent": parent, "subsidiaries": subsidiaries}
+
+
+def load_company_profile(company_id: str) -> dict:
+    """Return company profile facts and corporate structure from Wikidata.
+
+    Profile facts: industry, founding year, HQ, stock exchange, ticker symbol. Structure:
+    parent organization (if any) and subsidiaries. The `ticker` this returns is what
+    `load_fundamentals`/`load_corporate_actions` use to look up the same company in Sharadar —
+    the two sources connect through it rather than a second hardcoded ticker table.
+    """
+    qid = COMPANY_WIKIDATA_QID[company_id]
+    profile = _parse_profile_rows(_sparql(_profile_query(qid)))
+    structure = _parse_structure_rows(_sparql(_structure_query(qid)))
+    return {**profile, **structure}
+
+
 def _parse_nyt_docs(docs: list[dict]) -> list[dict]:
     return [
         {
@@ -306,3 +408,150 @@ def load_news(company_id: str, start_date: str, end_date: str) -> list[dict]:
         if page < 2:
             time.sleep(6)
     return articles
+
+
+# --- Sharadar — fundamentals + corporate actions ------------------------------------------------
+#
+# Unlike Wikidata/NYT, this is a paid vendor dataset. Requested via Sharadar's own REST API
+# (api.sharadar.com — NOT Nasdaq Data Link's "datatables" API, despite the settings/env var name
+# below being a holdover from when this was written against the wrong host; see adr/0005's
+# amendment). No extra client library needed.
+
+SF1_COLUMNS = ["calendardate", "revenue", "netinc", "assets", "liabilities", "equity", "eps"]
+ACTIONS_COLUMNS = ["date", "action", "name", "contraname"]
+TICKERS_COLUMNS = ["sector", "industry"]
+
+
+def _sharadar_error_detail(resp: httpx.Response) -> str:
+    """Best-effort dump of why a Sharadar request failed.
+
+    Sharadar's documented error shape is `{"error": ..., "description": ...}`, but this doesn't
+    assume that schema holds for every failure mode (a gateway/CDN in front of the API can return
+    its own, often non-JSON, error page) — it surfaces whatever's actually there.
+    """
+    try:
+        body = resp.json()
+        message = body.get("description") or body.get("error") or body.get("message")
+        body_detail = message or str(body)[:300]
+    except ValueError:
+        body_detail = resp.text.strip()[:300] or "(empty response body)"
+
+    rate_limit_headers = {k: v for k, v in resp.headers.items() if "ratelimit" in k.lower() or k.lower() == "retry-after"}
+    headers_detail = f", headers: {rate_limit_headers}" if rate_limit_headers else ""
+    return f"body: {body_detail}{headers_detail}"
+
+
+def _sharadar_get(table: str, columns: list[str], **filters: str) -> list[dict]:
+    """GET one Sharadar endpoint (e.g. "fundamentals", "actions", "tickers"), scoped to
+    `filters` (e.g. ticker=, dimension=) and `columns`.
+
+    Sharadar's API returns `{"count": N, "data": [{...}, ...]}` — already one dict per row (no
+    column/row zipping needed, unlike the old Nasdaq Data Link "datatables" shape this was
+    originally written against). `format=json` must be requested explicitly; the API defaults to
+    CSV otherwise.
+    """
+    if not settings.nasdaq_data_link_api_key:
+        raise RuntimeError(
+            "NASDAQ_DATA_LINK_API_KEY is not set — a Sharadar API key is required; add it to "
+            ".env before calling this."
+        )
+    params = {
+        "fields": ",".join(columns),
+        "api_key": settings.nasdaq_data_link_api_key,
+        "format": "json",
+        **filters,
+    }
+    for attempt in range(4):
+        resp = httpx.get(f"{SHARADAR_BASE_URL}/{table}", params=params, timeout=30)
+        if resp.status_code == 429:
+            raise RuntimeError(f"Sharadar {table} rate-limited — {_sharadar_error_detail(resp)}")
+        if resp.status_code in (502, 503, 504) and attempt < 3:
+            time.sleep(3 * (attempt + 1))
+            continue
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Sharadar {table} request failed ({resp.status_code}) — {_sharadar_error_detail(resp)}")
+        return resp.json()["data"]
+    raise RuntimeError(f"Sharadar {table} unavailable after retries (repeated 5xx)")
+
+
+def _parse_sf1_rows(rows: list[dict]) -> list[dict]:
+    return sorted(
+        (
+            {
+                "calendardate": row["calendardate"],
+                "revenue": row.get("revenue"),
+                "netinc": row.get("netinc"),
+                "assets": row.get("assets"),
+                "liabilities": row.get("liabilities"),
+                "equity": row.get("equity"),
+                "eps": row.get("eps"),
+            }
+            for row in rows
+        ),
+        key=lambda r: r["calendardate"],
+    )
+
+
+def load_fundamentals(ticker: str, dimension: str = "ARY") -> list[dict]:
+    """Return annual fundamentals (revenue, net income, assets, liabilities, equity, eps) for
+    a ticker from Sharadar's fundamentals endpoint — one row per fiscal year.
+
+    dimension="ARY" is Sharadar's "as-reported annual" cut — see
+    https://sharadar.com/docs/fundamentals for the full dimension taxonomy (ARQ/ART/MRY/MRQ/MRT
+    — quarterly cuts, restated vs. as-reported, trailing-twelve-month) if a different slice is
+    needed.
+    """
+    rows = _sharadar_get("fundamentals", SF1_COLUMNS, ticker=ticker, dimension=dimension)
+    return _parse_sf1_rows(rows)
+
+
+# Verified against a live response for MMM (2026-08-26): the `action` taxonomy for a single
+# ticker is small (dividend, spinoff, spinoffdividend) but "dividend" recurs quarterly forever —
+# 39 of 42 rows for MMM alone — and drowns out the one-off events (e.g. the 2024-04-01 Solventum
+# spinoff) that HAD_EVENT is meant to surface. adr/0005 only ever intended splits/spinoffs/
+# mergers/name changes here, so "dividend" is excluded; nothing else observed so far warrants it.
+EXCLUDED_ACTIONS = {"dividend"}
+
+
+def _parse_actions_rows(rows: list[dict]) -> list[dict]:
+    return sorted(
+        (
+            {
+                "date": row["date"],
+                "action": row["action"],
+                "name": row.get("name"),
+                "contraname": row.get("contraname"),
+            }
+            for row in rows
+            if row.get("action") not in EXCLUDED_ACTIONS
+        ),
+        key=lambda r: r["date"],
+    )
+
+
+def load_corporate_actions(ticker: str) -> list[dict]:
+    """Return dated corporate actions (splits, spinoffs, mergers, name changes, ...) for a
+    ticker from Sharadar's actions endpoint — this is what backs the graph's `Event` nodes.
+
+    Excludes routine dividend entries (see EXCLUDED_ACTIONS) — everything else Sharadar returns
+    is passed through as-is.
+    """
+    rows = _sharadar_get("actions", ACTIONS_COLUMNS, ticker=ticker)
+    return _parse_actions_rows(rows)
+
+
+def _parse_tickers_row(rows: list[dict]) -> dict:
+    row = rows[0] if rows else {}
+    return {"sector": row.get("sector"), "industry": row.get("industry")}
+
+
+def load_sector_classification(ticker: str) -> dict:
+    """Return Sharadar's own sector/industry classification for a ticker (Sharadar's tickers
+    endpoint).
+
+    Deliberately kept separate from Wikidata's `industry` (load_company_profile) rather than
+    merged — a financial-data vendor's taxonomy and a crowdsourced one can legitimately classify
+    the same company differently; see adr/0005 for why that's surfaced rather than papered over.
+    """
+    rows = _sharadar_get("tickers", TICKERS_COLUMNS, ticker=ticker)
+    return _parse_tickers_row(rows)

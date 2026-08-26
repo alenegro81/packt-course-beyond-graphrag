@@ -1,31 +1,49 @@
 from financial_advisor.agent.state import AgentState
 
-STRATEGY_SYSTEM_PROMPT = """\
-You are a financial research analyst. You have access to four tools that search a Neo4j \
-knowledge graph of 10-K filings, enriched with executive/board data:
-
-- semantic_search: meaning-based search over chunk embeddings. Good for concepts, themes, \
-comparisons, or when you're unsure of the exact wording used in the filing. Set company_id \
-and/or year to pre-filter — a company with multiple filing years needs year set to pinpoint \
-one specific 10-K instead of searching across all of them at once.
-- fulltext_search: Lucene-syntax keyword search. Good for exact terms, line items, or section \
-titles. Combine terms with AND/OR; use ~ for single-word fuzzy matching (e.g. "research~ AND \
-development~"). Use the company_id and year arguments to scope the search — don't also put the \
-company name or year in the query text itself, that dilutes ranking instead of restricting it.
-- get_document_pages: once you know a doc_id (returned by the other two tools, e.g. \
-"3M/3M_2024_10K.pdf"), pull specific pages directly for fuller context around a promising hit.
-- get_executives: structured lookup of a company's executives/board members, each with a bio \
-and career_history (roles held at *other* companies, with dates). Use this instead of \
-semantic_search/fulltext_search for questions about leadership, board composition, or an \
-executive's background/prior employers — the 10-K text itself only names officers and defers \
-their biography to a proxy statement that isn't in this corpus.
-
-Call one or more tools per turn. Prefer semantic_search early or for broad/comparative \
-questions; switch to fulltext_search once you know specific terminology; use get_document_pages \
-once you've identified a promising doc_id and page range; use get_executives directly whenever \
-the question is about people rather than filing text. Don't repeat an identical (tool, \
-arguments) call you've already tried — vary the query, tool, or target document instead.
+# Tool behavior (what each tool does, its source, when to use it) lives entirely in each tool's
+# own docstring in agent.tools — the LLM already receives those via bind_tools, so repeating
+# them here would be a second copy that can silently drift out of sync with whichever tools a
+# given agent build actually has bound (this happened: the old single STRATEGY_SYSTEM_PROMPT
+# always described get_executives even when Module 2's agent didn't have it bound). This
+# preamble only carries strategy that isn't a property of any one tool.
+STRATEGY_PREAMBLE = """\
+You are a financial research analyst. Use the tools available to you to answer the question — \
+their docstrings tell you what each one does, its data source, and when to prefer it. Call one \
+or more tools per turn. Don't repeat an identical (tool, arguments) call you've already tried — \
+vary the query, tool, or target document instead.
 """
+
+MODULE_2_STRATEGY_HINT = """\
+Prefer semantic_search early or for broad/comparative questions; switch to fulltext_search \
+once you know specific terminology; use get_document_pages once you've identified a promising \
+doc_id and page range.
+"""
+
+MODULE_3_STRATEGY_HINT = (
+    MODULE_2_STRATEGY_HINT
+    + """\
+Use get_executives, get_company_profile, or get_financials directly whenever the question is \
+about people, company profile/structure/events, or financial figures — don't reach for \
+semantic_search/fulltext_search for those, the structured tools are more reliable.
+"""
+)
+
+MODULE_4_STRATEGY_HINT = (
+    MODULE_3_STRATEGY_HINT
+    + """\
+Use get_recognised_entities/get_entity_relationships when the question asks what a specific \
+document mentions (e.g. subsidiaries, regulations, products, risk topics) or how those things \
+connect — they give a complete, deduplicated structured view of one doc_id instead of whatever \
+a text search happens to surface, and are far more reliable for counting/enumerating than \
+reading raw chunk text. Get the doc_id from a prior search hit first if you don't already have \
+one. They only cover chunks already run through extraction; if they return nothing, fall back \
+to semantic_search/fulltext_search.
+"""
+)
+
+MODULE_2_STRATEGY_PROMPT = STRATEGY_PREAMBLE + "\n" + MODULE_2_STRATEGY_HINT
+MODULE_3_STRATEGY_PROMPT = STRATEGY_PREAMBLE + "\n" + MODULE_3_STRATEGY_HINT
+MODULE_4_STRATEGY_PROMPT = STRATEGY_PREAMBLE + "\n" + MODULE_4_STRATEGY_HINT
 
 ANSWER_SYSTEM_PROMPT = """\
 You are an expert financial analyst. Answer the question using ONLY the knowledge elements \

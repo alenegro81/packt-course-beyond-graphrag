@@ -25,5 +25,8 @@ class Settings(BaseSettings):
     # NYT Article Search API (Module 3 — news enrichment)
     nyt_api_key: str = ""
 
+    # Nasdaq Data Link / Sharadar (Module 3 — fundamentals + corporate actions)
+    nasdaq_data_link_api_key: str = ""
+
 
 settings = Settings()

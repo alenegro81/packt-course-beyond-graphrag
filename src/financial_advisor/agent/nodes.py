@@ -10,7 +10,6 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from financial_advisor.agent.prompts import (
-    STRATEGY_SYSTEM_PROMPT,
     build_answer_grading_prompt,
     build_answer_prompt,
     build_retrieval_grading_prompt,
@@ -23,11 +22,11 @@ MAX_RETRIEVAL_ITERATIONS = 4
 MAX_ANSWER_ATTEMPTS = 3
 
 
-def retriever_strategy_node(state: AgentState, model_with_tools: Any) -> dict:
+def retriever_strategy_node(state: AgentState, model_with_tools: Any, strategy_prompt: str) -> dict:
     """Decide which tool(s) to call next, given the question, growing knowledge, and history."""
     prompt = build_strategy_prompt(state)
     response = model_with_tools.invoke(
-        [SystemMessage(content=STRATEGY_SYSTEM_PROMPT), HumanMessage(content=prompt)]
+        [SystemMessage(content=strategy_prompt), HumanMessage(content=prompt)]
     )
     tool_calls = [{"name": tc["name"], "args": tc["args"]} for tc in (response.tool_calls or [])]
 
@@ -60,6 +59,10 @@ def call_tools_node(state: AgentState) -> dict:
             continue
         try:
             results = tool.invoke(call["args"])
+            if isinstance(results, dict):
+                # A handful of tools (get_company_profile) return one dict, not a list — every
+                # other tool returns list[dict]; normalize so the loop below always sees rows.
+                results = [results] if results else []
         except Exception as exc:
             print(f"[tools] {call['name']} failed: {exc}")
             results = []
