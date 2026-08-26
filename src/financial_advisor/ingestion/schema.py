@@ -89,11 +89,12 @@ def apply_agentic_schema(dimensions: int) -> None:
     print("  [schema] rebuilt chunk_embedding with company_id/year pre-filters")
 
 
-# Module 3 — people, events, news
+# Module 3 — people, events, news, financials
 CONSTRAINTS_M3 = [
     "CREATE CONSTRAINT person_id IF NOT EXISTS FOR (n:Person) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT event_id IF NOT EXISTS FOR (n:Event) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT article_id IF NOT EXISTS FOR (n:Article) REQUIRE n.id IS UNIQUE",
+    "CREATE CONSTRAINT financial_period_id IF NOT EXISTS FOR (n:FinancialPeriod) REQUIRE n.id IS UNIQUE",
 ]
 
 INDEXES_M3 = [
@@ -102,5 +103,19 @@ INDEXES_M3 = [
 
 
 def apply_enrichment_schema() -> None:
-    """Constraints + fulltext index for the Module 3 people/events/news additions."""
+    """Constraints + fulltext index for the Module 3 people/events/news/financials additions."""
     _run_statements(CONSTRAINTS_M3 + INDEXES_M3)
+
+
+# Module 4 — LLM-extracted entities/relationships (all under one generic label/edge type — see
+# adr/0007; no per-document uniqueness beyond (string, doc_id) since entity resolution across
+# documents is Module 5's job)
+CONSTRAINTS_M4 = [
+    "CREATE CONSTRAINT recognised_entity_key IF NOT EXISTS FOR (n:RecognisedEntity) "
+    "REQUIRE (n.string, n.doc_id) IS UNIQUE",
+]
+
+
+def apply_extraction_schema() -> None:
+    """Composite uniqueness constraint for the Module 4 RecognisedEntity nodes."""
+    _run_statements(CONSTRAINTS_M4)
