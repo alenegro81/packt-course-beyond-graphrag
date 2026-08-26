@@ -119,3 +119,15 @@ CONSTRAINTS_M4 = [
 def apply_extraction_schema() -> None:
     """Composite uniqueness constraint for the Module 4 RecognisedEntity nodes."""
     _run_statements(CONSTRAINTS_M4)
+
+
+# Module 5 — entity resolution groups (see similarity/resolver.py). A SAME_AS edge from a
+# RecognisedEntity/Company/Person to its EntityGroup marks that node as resolved.
+CONSTRAINTS_M5 = [
+    "CREATE CONSTRAINT entity_group_id IF NOT EXISTS FOR (n:EntityGroup) REQUIRE n.id IS UNIQUE",
+]
+
+
+def apply_similarity_schema() -> None:
+    """Uniqueness constraint for the Module 5 EntityGroup nodes."""
+    _run_statements(CONSTRAINTS_M5)
