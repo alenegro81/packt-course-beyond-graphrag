@@ -2,6 +2,8 @@
 .env
 data/*
 !data/.gitkeep
+!data/eval/
+!data/eval/*
 __pycache__/
 *.pyc
 .pytest_cache/

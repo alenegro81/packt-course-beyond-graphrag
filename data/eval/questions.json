@@ -1,0 +1,23 @@
+[
+  {
+    "id": "3m-net-sales-2024-yoy",
+    "question": "What was 3M total net sales for fiscal year 2024, and how did that compare to fiscal year 2023?",
+    "ground_truth": "3M's total net sales (revenue) were $24,575 million in fiscal year 2024, essentially flat versus $32,681 million in fiscal year 2023 on a total-company as-reported basis — but that comparison is distorted by 3M's April 2024 spin-off of Solventum, which removed the former health-care segment's revenue from 3M's continuing-operations results starting in 2024. On a continuing-operations basis (the comparison 3M itself reports), full-year 2024 net sales were about $24.6 billion, down roughly 0.1% year over year.",
+    "source": "Sharadar FinancialPeriod (MMM:2023-12-31, MMM:2024-12-31), cross-checked against 3M's own continuing-operations framing following the April 2024 Solventum spin-off",
+    "decompose": false
+  },
+  {
+    "id": "apple-3m-margin-2024",
+    "question": "Compare Apple and 3M on fiscal year 2024 net income and total net sales: give both companies' figures and say which company had the higher net income margin.",
+    "ground_truth": "Apple (FY2024): total net sales $391,035 million, net income $93,736 million, net income margin about 23.97%. 3M (FY2024): total net sales $24,575 million, net income $4,173 million, net income margin about 16.98%. Apple had the higher net income margin.",
+    "source": "Sharadar FinancialPeriod (AAPL:2024-12-31, MMM:2024-12-31)",
+    "decompose": false
+  },
+  {
+    "id": "apple-2024-three-part",
+    "question": "For fiscal year 2024, what was Apple total net sales, which product category had the fastest year-over-year growth, and what does Apple identify as a key risk related to its supply chain concentration?",
+    "ground_truth": "Total net sales were $391.035 billion (up 2% YoY). Services was the fastest-growing category, up 13% YoY to $96.169 billion, while iPhone was roughly flat, Mac grew 2%, and iPad and Wearables declined. On supply chain risk, Apple states that it relies on single or limited sources for some components and that its manufacturing is concentrated with a small number of outsourcing partners, much of it outside the U.S. (notably in China), which the company identifies as exposing it to disruption from geopolitical tensions, trade restrictions, and regional disruptions.",
+    "source": "Sharadar FinancialPeriod (AAPL:2024-12-31) for the sales figures; Apple's FY2024 10-K (Item 1A Risk Factors, Item 7 MD&A) for the growth-driver and supply-chain content",
+    "decompose": true
+  }
+]
