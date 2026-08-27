@@ -1,6 +1,8 @@
 from langchain_core.tools import tool
+from neo4j.exceptions import CypherSyntaxError
 
 from financial_advisor.retrieval import graph_nav, keyword, vector
+from financial_advisor.text2cypher.chain import run_text_to_cypher
 
 
 @tool
@@ -131,6 +133,29 @@ def get_entity_relationships(doc_id: str, relationship_type: str | None = None) 
     return graph_nav.get_entity_relationships(doc_id, relationship_type=relationship_type)
 
 
+@tool
+def query_graph(question: str) -> list[dict]:
+    """Answer a question by generating and running a read-only Cypher query against the whole
+    graph, schema-aware but with no built-in retry or self-correction.
+
+    Source: an LLM-generated Cypher query over this project's live Neo4j schema (all labels/
+    relationships from every module) — not a curated source, and not guaranteed correct. Use
+    this ONLY as a last resort, for questions none of the other tools cover — typically
+    cross-cutting aggregates, counts, or multi-hop patterns spanning several node types (e.g.
+    "how many companies has each executive worked at", "which entities are RELATED_TO both a
+    Risk and a Regulation"). Prefer the structured tools above whenever the question fits one of
+    them — they're more reliable. If this returns an error, don't retry the exact same question;
+    rephrase it or fall back to another tool.
+    """
+    try:
+        cypher, rows = run_text_to_cypher(question)
+    except (ValueError, CypherSyntaxError) as exc:
+        return [{"id": "query_graph_error", "error": str(exc)}]
+    if not rows:
+        return [{"id": "query_graph_empty", "cypher": cypher, "message": "Query returned no results."}]
+    return [{"id": row.get("id", f"row_{i}"), **row} for i, row in enumerate(rows)]
+
+
 MODULE_2_TOOLS = [semantic_search, fulltext_search, get_document_pages]
 MODULE_3_TOOLS = [
     semantic_search,
@@ -141,4 +166,5 @@ MODULE_3_TOOLS = [
     get_financials,
 ]
 MODULE_4_TOOLS = MODULE_3_TOOLS + [get_recognised_entities, get_entity_relationships]
-TOOLS_BY_NAME = {t.name: t for t in MODULE_4_TOOLS}
+MODULE_6_TOOLS = MODULE_4_TOOLS + [query_graph]
+TOOLS_BY_NAME = {t.name: t for t in MODULE_6_TOOLS}

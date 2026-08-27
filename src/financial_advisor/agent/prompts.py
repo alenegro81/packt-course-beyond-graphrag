@@ -41,9 +41,19 @@ to semantic_search/fulltext_search.
 """
 )
 
+MODULE_6_STRATEGY_HINT = (
+    MODULE_4_STRATEGY_HINT
+    + """\
+Use query_graph only as a last resort, when the question needs a cross-cutting aggregate, \
+count, or multi-hop pattern that none of the structured tools above can answer directly. It \
+generates its own Cypher with no guarantee of correctness — prefer any other tool that fits.
+"""
+)
+
 MODULE_2_STRATEGY_PROMPT = STRATEGY_PREAMBLE + "\n" + MODULE_2_STRATEGY_HINT
 MODULE_3_STRATEGY_PROMPT = STRATEGY_PREAMBLE + "\n" + MODULE_3_STRATEGY_HINT
 MODULE_4_STRATEGY_PROMPT = STRATEGY_PREAMBLE + "\n" + MODULE_4_STRATEGY_HINT
+MODULE_6_STRATEGY_PROMPT = STRATEGY_PREAMBLE + "\n" + MODULE_6_STRATEGY_HINT
 
 ANSWER_SYSTEM_PROMPT = """\
 You are an expert financial analyst. Answer the question using ONLY the knowledge elements \

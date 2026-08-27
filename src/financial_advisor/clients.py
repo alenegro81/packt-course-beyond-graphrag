@@ -33,4 +33,5 @@ def get_graph() -> Neo4jGraph:
         url=settings.neo4j_uri,
         username=settings.neo4j_username,
         password=settings.neo4j_password,
+        database=settings.neo4j_database,
     )
