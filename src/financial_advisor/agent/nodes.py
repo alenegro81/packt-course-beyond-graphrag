@@ -17,6 +17,7 @@ from financial_advisor.agent.prompts import (
 )
 from financial_advisor.agent.state import AgentState, AnswerGrade, RetrievalGrade
 from financial_advisor.agent.tools import TOOLS_BY_NAME
+from financial_advisor.similarity.rerank import deduplicate_by_similarity
 
 MAX_RETRIEVAL_ITERATIONS = 4
 MAX_ANSWER_ATTEMPTS = 3
@@ -77,6 +78,18 @@ def call_tools_node(state: AgentState) -> dict:
         "tool_call_log": log_entries,
         "tool_calls": [],
     }
+
+
+def deduplicate_chunks_node(state: AgentState, threshold: float = 0.92) -> dict:
+    """Drop near-duplicate chunks (precomputed SIMILAR_TO score >= threshold, see
+    similarity/linker.py + similarity/rerank.py) before retrieval grading sees them — keeps
+    whichever copy was retrieved first. Optional: only wired in when build_agent(dedup=True)."""
+    chunks = state.get("retrieved_chunks", [])
+    deduped = deduplicate_by_similarity(chunks, threshold=threshold)
+    dropped = len(chunks) - len(deduped)
+    if dropped:
+        print(f"[dedup] {dropped} near-duplicate chunk(s) dropped ({len(chunks)} -> {len(deduped)})")
+    return {"retrieved_chunks": deduped}
 
 
 def evaluate_retrieval_node(state: AgentState, model: Any) -> dict:

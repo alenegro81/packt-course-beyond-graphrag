@@ -1,5 +1,6 @@
 from financial_advisor.extraction.validators import EntityType
 from financial_advisor.similarity.candidates import find_fuzzy_candidates, node_match_clause
+from financial_advisor.similarity.rerank import _drop_near_duplicates
 from financial_advisor.similarity.resolver import pick_canonical_name
 from financial_advisor.similarity.validators import CandidateNode, ResolutionResult
 
@@ -64,3 +65,27 @@ def test_resolution_result_parses_from_dict():
     result = ResolutionResult(**raw)
     assert len(result.judgments) == 1
     assert result.judgments[0].same_entity is True
+
+
+def test_drop_near_duplicates_keeps_first_seen_of_a_pair():
+    chunks = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    deduped = _drop_near_duplicates(chunks, [("a", "b")])
+    assert [c["id"] for c in deduped] == ["a", "c"]
+
+
+def test_drop_near_duplicates_no_pairs_keeps_everything():
+    chunks = [{"id": "a"}, {"id": "b"}]
+    assert _drop_near_duplicates(chunks, []) == chunks
+
+
+def test_drop_near_duplicates_is_not_transitive():
+    # a~b and b~c, but a and c are not paired directly: b is dropped (paired with kept a), but
+    # c survives — it's only ever compared against KEPT chunks, not dropped ones.
+    chunks = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    deduped = _drop_near_duplicates(chunks, [("a", "b"), ("b", "c")])
+    assert [c["id"] for c in deduped] == ["a", "c"]
+
+
+def test_drop_near_duplicates_pair_order_is_symmetric():
+    chunks = [{"id": "a"}, {"id": "b"}]
+    assert _drop_near_duplicates(chunks, [("b", "a")]) == [{"id": "a"}]
