@@ -13,7 +13,7 @@ from financial_advisor.agent.nodes import (
     generate_answer_node,
     retriever_strategy_node,
 )
-from financial_advisor.agent.prompts import MODULE_3_STRATEGY_PROMPT
+from financial_advisor.agent.prompts import MODULE_3_STRATEGY_PROMPT, build_retrieval_grading_system_prompt
 from financial_advisor.agent.state import AgentState
 from financial_advisor.agent.tools import MODULE_3_TOOLS
 from financial_advisor.clients import get_llm
@@ -43,6 +43,7 @@ def build_agent(
     """
     model = get_llm()
     model_with_tools = model.bind_tools(tools)
+    grading_system_prompt = build_retrieval_grading_system_prompt(tools)
 
     graph = StateGraph(AgentState)
     graph.add_node(
@@ -50,7 +51,10 @@ def build_agent(
         partial(retriever_strategy_node, model_with_tools=model_with_tools, strategy_prompt=strategy_prompt),
     )
     graph.add_node("call_tools", call_tools_node)
-    graph.add_node("evaluate_retrieval", partial(evaluate_retrieval_node, model=model))
+    graph.add_node(
+        "evaluate_retrieval",
+        partial(evaluate_retrieval_node, model=model, grading_system_prompt=grading_system_prompt),
+    )
     graph.add_node("generate_answer", partial(generate_answer_node, model=model))
     graph.add_node("evaluate_answer", partial(evaluate_answer_node, model=model))
 

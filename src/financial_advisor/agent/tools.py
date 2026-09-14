@@ -14,11 +14,17 @@ def semantic_search(
     Source: this project's own Neo4j vector index over `Chunk` embeddings — unstructured filing
     text, not a structured/reference source. Best for broad, conceptual, or comparative
     questions, or when you're unsure of the exact wording used in the filing. Set company_id
-    (e.g. "3M", "APPLE") to restrict the search to one company's filings once you know which one
-    you need. Set year (e.g. 2024, 2025) to restrict to one filing year — combine both when a
-    company has more than one year in the corpus and you need to pinpoint a single filing. Do
-    NOT use this for people/leadership, company profile, or financial-figure questions — those
-    have dedicated structured tools below that are more reliable.
+    ("3M" or "APPLE" — the only two companies ingested) to restrict the search to one company's
+    filings once you know which one you need. Set year to restrict to one filing year — combine
+    both when a company has more than one year in the corpus and you need to pinpoint a single
+    filing. The corpus has ONLY fiscal years 2024 and 2025 for each company (one 10-K per
+    year, four documents total, nothing earlier or later) — rephrasing a query or trying other
+    year values will not surface an older filing, because none exists to find; a company's full
+    multi-decade corporate history (e.g. every past stock split, merger, or legal name change)
+    is categorically not in this text regardless of query, since a 10-K's own notes only disclose
+    recent-year events by SEC convention, not company history. Do NOT use this for
+    people/leadership, company profile, or financial-figure questions — those have dedicated
+    structured tools below that are more reliable.
     """
     return vector.semantic_search(query, k=k, company_id=company_id, year=year)
 
@@ -33,9 +39,15 @@ def fulltext_search(
     text, not a structured/reference source. Best once you know the exact terminology (line
     items, section titles). Lucene syntax: combine terms with AND/OR, use ~ for single-word
     fuzzy matching (e.g. "research~ AND development~"). Phrase fuzzy matching ("some phrase"~)
-    is not supported. Set company_id to restrict the search to one company's filings, and/or
-    year (e.g. 2024, 2025) to restrict to one filing year — combine both to pinpoint a single
-    filing. Do NOT use this for people/leadership, company profile, or financial-figure
+    is not supported. Set company_id ("3M" or "APPLE" — the only two companies ingested) to
+    restrict the search to one company's filings, and/or year to restrict to one filing year —
+    combine both to pinpoint a single filing. The corpus has ONLY fiscal years 2024 and 2025 for
+    each company (one 10-K per year, four documents total, nothing earlier or later) —
+    rephrasing a query or trying other year values will not surface an older filing, because
+    none exists to find; a company's full multi-decade corporate history (e.g. every past stock
+    split, merger, or legal name change) is categorically not in this text regardless of query,
+    since a 10-K's own notes only disclose recent-year events by SEC convention, not company
+    history. Do NOT use this for people/leadership, company profile, or financial-figure
     questions — those have dedicated structured tools below that are more reliable.
     """
     return keyword.fulltext_search(query, k=k, company_id=company_id, year=year)
@@ -70,18 +82,22 @@ def get_executives(company_id: str) -> list[dict]:
 
 @tool
 def get_company_profile(company_id: str) -> dict:
-    """Look up a company's profile (industry, founding year, HQ, exchange, ticker), corporate
-    structure (parent/subsidiaries), Sharadar's own sector/industry classification, and dated
-    corporate events (splits, spinoffs, mergers, name changes).
+    """Look up a company's profile (`wikidata_profile`: industry, founding year, HQ, exchange,
+    ticker), corporate structure (parent/subsidiaries), Sharadar's own sector/industry
+    classification (`sharadar_profile`), and dated corporate events.
 
-    Source: profile facts and corporate structure come from Wikidata (crowdsourced structured
-    KB, via SPARQL) — coverage can be incomplete. `sharadar_sector`/`sharadar_industry` and
-    events come from Sharadar (a paid financial-data vendor feed) — deliberately kept as
-    separate fields from Wikidata's `industry` rather than merged, since the two sources can
-    legitimately classify the same company differently. Use for "what kind of company is
-    this", "who owns/is owned by whom", or "what corporate events has this company had"
-    questions. Set company_id (e.g. "3M", "APPLE"). Do NOT use this for revenue/profit/
-    balance-sheet figures — use get_financials.
+    Source: `wikidata_profile` and corporate structure come from Wikidata (crowdsourced
+    structured KB, via SPARQL — NOT Wikipedia, a different project) — coverage can be
+    incomplete. `sharadar_profile` and events come from Sharadar (a paid financial-data vendor
+    feed) — deliberately kept as a separate nested object rather than merged into
+    `wikidata_profile`, since the two sources can legitimately classify the same company
+    differently. Events are limited to what Sharadar's feed actually tracks for a ticker — in
+    practice just spinoffs and splits (routine dividends are filtered out); it has never carried
+    mergers or legal company-name-change history for either company in this course, and there is
+    no other tool that does — that's a permanent gap in this dataset, not a sign the query needs
+    retrying. Use for "what kind of company is this", "who owns/is owned by whom", or "what
+    spinoffs/splits has this company had" questions. Set company_id (e.g. "3M", "APPLE"). Do NOT
+    use this for revenue/profit/balance-sheet figures — use get_financials.
     """
     return graph_nav.get_company_profile(company_id)
 

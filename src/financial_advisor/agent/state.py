@@ -25,8 +25,9 @@ class RetrievalGrade(BaseModel):
     feedback: str = Field(
         default="",
         description=(
-            "If not sufficient: exactly what's missing and which tool/query/document to try next. "
-            "Empty when sufficient."
+            "If not sufficient: exactly what's missing and which tool/query/document to try next "
+            "— only from the tools actually available to this agent (see system prompt), never a "
+            "source it has no way to call. Empty when sufficient."
         ),
     )
 

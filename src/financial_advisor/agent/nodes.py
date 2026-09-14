@@ -92,10 +92,12 @@ def deduplicate_chunks_node(state: AgentState, threshold: float = 0.92) -> dict:
     return {"retrieved_chunks": deduped}
 
 
-def evaluate_retrieval_node(state: AgentState, model: Any) -> dict:
+def evaluate_retrieval_node(state: AgentState, model: Any, grading_system_prompt: str) -> dict:
     """Grow the knowledge base from retrieved chunks; decide if it's enough to answer."""
     prompt = build_retrieval_grading_prompt(state)
-    grade: RetrievalGrade = model.with_structured_output(RetrievalGrade).invoke(prompt)
+    grade: RetrievalGrade = model.with_structured_output(RetrievalGrade).invoke(
+        [SystemMessage(content=grading_system_prompt), HumanMessage(content=prompt)]
+    )
 
     print(f"[grade-retrieval] sufficient={grade.sufficient}")
     if not grade.sufficient:

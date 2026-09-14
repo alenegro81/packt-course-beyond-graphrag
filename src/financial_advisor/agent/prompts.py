@@ -103,6 +103,58 @@ def _render_retrieved_item(item: dict) -> str:
     return f"[record id={item['id']}]\n{fields}"
 
 
+# Retrieval grading has no bind_tools call (it's with_structured_output, not tool-calling), so
+# unlike the strategy LLM it never sees each tool's docstring automatically — without this, the
+# grader judges sufficiency against an unbounded ideal answer and, having no idea what sources
+# actually exist, invents "next steps" the agent has no way to execute: e.g. asking for a
+# question about 3M's corporate-action history to be filled out via "SEC EDGAR", "3M's Wikipedia
+# page", or "Bloomberg/CRSP" when the agent's only source for that (Sharadar's ACTIONS feed) has
+# already been queried and simply doesn't carry that data — burning every retry on a suggestion
+# that was never reachable, rather than recognizing the source's real coverage ends there. Built
+# from the same tool list the strategy prompt is paired with, so it can't drift the way a second
+# hardcoded copy would (see the top-of-file note on STRATEGY_PREAMBLE).
+RETRIEVAL_GRADING_PREAMBLE_TEMPLATE = """\
+You are grading retrieval for a financial research agent whose ONLY sources of information are \
+the tools below — it cannot browse the web, Wikipedia, SEC EDGAR, or any financial database not \
+listed here. Judge sufficiency against what these specific tools can plausibly return, not an \
+idealized complete answer. If the question asks for something none of these sources would ever \
+contain (e.g. a fact outside a data provider's own tracked coverage, or a document never \
+ingested — read each tool's docstring below for what it does and doesn't cover), that is a \
+real, permanent gap — mark it sufficient once every tool that COULD help has actually been \
+tried, note the gap plainly in `growing_knowledge`, and let the final answer state the \
+limitation honestly. Only suggest retrying when there's a tool below, not yet tried with a \
+reasonable variation, that could plausibly close the specific gap. Two ways retrieval wastes \
+rounds without gaining anything — avoid steering it into either:
+- A tool called again with the same (or equivalent) arguments returns the same result. Once a \
+structured tool (one with no free-text query, e.g. a profile/executives/financials lookup) has \
+been called for a given target, calling it again cannot surface anything new — don't suggest \
+re-running it "to double check."
+- A text-search tool (semantic_search/fulltext_search) already tried with several genuinely \
+different phrasings of the same concept, turning up nothing on the topic (or the same handful \
+of facts each time), is evidence that concept isn't in the corpus — not a reason to keep \
+suggesting yet another rephrasing. One more differently-worded query is worth trying only if \
+the prior attempts hinted at something (a partial mention, a promising but unexplored doc_id) \
+worth chasing specifically — not as a general "try again" reflex.
+
+`sufficient` must agree with your own `feedback`: if what you write concludes (however \
+worded — "no further queries would help", "this is a permanent gap", "not available from the \
+tools in this environment") that nothing left to try could close the remaining gap, that \
+conclusion means `sufficient=True` — writing that conclusion while still setting \
+`sufficient=False` sends the agent through another retrieval round with nothing new to \
+attempt. Reaching that conclusion is a legitimate, complete answer to this grading task, not a \
+failure to find enough — it's what should happen once the available sources are exhausted.
+
+Tools available to this agent:
+{tool_descriptions}
+"""
+
+
+def build_retrieval_grading_system_prompt(tools: list) -> str:
+    """System prompt for the retrieval grader — see RETRIEVAL_GRADING_PREAMBLE_TEMPLATE."""
+    tool_descriptions = "\n\n".join(f"- {t.name}: {t.description}" for t in tools)
+    return RETRIEVAL_GRADING_PREAMBLE_TEMPLATE.format(tool_descriptions=tool_descriptions)
+
+
 def build_retrieval_grading_prompt(state: AgentState) -> str:
     """User prompt for grading retrieved chunks and growing the knowledge base."""
     chunks = state.get("retrieved_chunks", [])
@@ -121,12 +173,15 @@ All chunks retrieved so far (cumulative across rounds):
 
 Task:
 1. Decide whether the cumulative knowledge — previous rounds plus these chunks — is enough to \
-fully and precisely answer the question.
+fully and precisely answer the question, given only the tools actually available to this agent \
+(see system prompt).
 2. Rewrite `growing_knowledge` as the complete, self-contained set of facts needed to answer, \
 citing doc_id for each fact. This replaces what the answer generator sees — the raw chunks are \
-NOT passed forward, so do not omit anything still needed.
-3. If not sufficient, explain in `feedback` exactly what's missing and suggest the next tool, \
-query, or document to try.
+NOT passed forward, so do not omit anything still needed. If part of the question is out of \
+reach of every available tool, say so explicitly here too.
+3. If not sufficient, explain in `feedback` exactly what's missing and which available tool — \
+by name — and what different query/arguments might close the gap. Never suggest a source that \
+isn't one of the tools listed in the system prompt.
 """
 
 

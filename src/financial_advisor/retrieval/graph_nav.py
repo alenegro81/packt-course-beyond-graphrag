@@ -53,11 +53,14 @@ def get_company_profile(company_id: str) -> dict:
     """Return a company's profile (Wikidata), corporate structure (Wikidata), Sharadar's own
     sector classification, and events (Sharadar).
 
-    industry/founded/hq/exchange/ticker and parent/subsidiaries come from Wikidata.
-    sharadar_sector/sharadar_industry are Sharadar's own classification — kept separate from
-    `industry` since the two sources can disagree. events are dated corporate actions (splits,
-    spinoffs, mergers, name changes) from Sharadar ACTIONS, via HAD_EVENT. parent/subsidiaries
-    may point to stub Company nodes we only know the name of.
+    `wikidata_profile` (industry/founded/hq/exchange/ticker) and parent/subsidiaries come from
+    Wikidata. `sharadar_profile` (sector/industry) is Sharadar's own classification — kept as a
+    separate nested object rather than merged into `wikidata_profile`, since the two sources
+    can legitimately disagree. events are dated corporate actions from Sharadar ACTIONS, via
+    HAD_EVENT — in practice just dividends (excluded), spinoffs, and splits; Sharadar's feed has
+    never actually carried mergers or legal name changes for either ticker in this course despite
+    ADR 0005's original assumption (see loaders.load_corporate_actions). parent/subsidiaries may
+    point to stub Company nodes we only know the name of.
     """
     rows = neo4j_service.run_query(
         """
@@ -65,9 +68,8 @@ def get_company_profile(company_id: str) -> dict:
         OPTIONAL MATCH (c)-[:SUBSIDIARY_OF]->(parent:Company)
         OPTIONAL MATCH (sub:Company)-[:SUBSIDIARY_OF]->(c)
         OPTIONAL MATCH (c)-[:HAD_EVENT]->(e:Event)
-        RETURN c.id AS id, c.name AS name, c.industry AS industry, c.founded AS founded,
-               c.hq AS hq, c.exchange AS exchange, c.ticker AS ticker,
-               c.sharadar_sector AS sharadar_sector, c.sharadar_industry AS sharadar_industry,
+        RETURN c.id AS id, c.name AS name, {industry: c.industry, founded: c.founded , hq: c.hq, exchange: c.exchange, ticker: c.ticker} AS wikidata_profile,
+               {sector: c.sharadar_sector, industry: c.sharadar_industry} AS sharadar_profile,
                parent.name AS parent,
                collect(DISTINCT sub.name) AS subsidiaries,
                collect(DISTINCT CASE WHEN e IS NULL THEN null
