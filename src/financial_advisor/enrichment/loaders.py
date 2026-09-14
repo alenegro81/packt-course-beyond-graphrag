@@ -23,14 +23,20 @@ COMPANY_WIKIDATA_QID = {"3M": "Q159433", "APPLE": "Q312"}
 COMPANY_DISPLAY_NAME = {"3M": "3M", "APPLE": "Apple Inc."}
 _QID_TO_COMPANY_ID = {qid: company_id for company_id, qid in COMPANY_WIKIDATA_QID.items()}
 
-# The most recent fiscal year among the 10-Ks ingested in Module 1 — scopes the board roster to
-# the people actually relevant to those filings (both 2024 and 2025 are in the corpus; 2025 is
-# used as "current" since a person holding a role through 2025 also covers the 2024 filing).
-# Keep this in sync with whatever's actually ingested — nothing derives it automatically.
-# Caveat: Wikidata's org-level CEO/chairperson claims (P169/P488) reflect the officer as of
-# whenever Wikidata was last edited, not as of FILING_YEAR — the cross-check against each
-# person's own dated P39 tenure history (_matches_filing_year) can undercount if a company has
-# since named a newer CEO/chairperson that Wikidata hasn't recorded a dated P39 entry for yet.
+# The most recent fiscal year among the 10-Ks ingested in Module 1 — scopes the officer/board
+# roster to the people actually relevant to those filings (both 2024 and 2025 are in the corpus;
+# 2025 is used as "current" since a person holding a role through 2025 also covers the 2024
+# filing). Keep this in sync with whatever's actually ingested — nothing derives it automatically.
+# Founders are exempt from this filter (see _parse_officer_rows) since they're relevant
+# regardless of which fiscal year a filing covers.
+#
+# Caveat (found 2026-09-01, live on Apple/Q312): wdt:P169/wdt:P488 are "truthy" shortcuts — they
+# return only the *best*-ranked statement(s), which is ALL normal-rank statements only until an
+# editor sets one statement's rank to "preferred" (e.g. recording a new CEO), at which point every
+# other officer — including the one actually in office during FILING_YEAR — silently disappears
+# from the result. _officers_query below queries the full statement (p:/ps:/pq:) instead, getting
+# every CEO/chairperson ever recorded with their own start/end dates, then applies the same
+# FILING_YEAR overlap filter already used for board members.
 FILING_YEAR = 2025
 
 
@@ -50,29 +56,45 @@ def _sparql(query: str) -> list[dict]:
                 time.sleep(3 * (attempt + 1))
                 continue
             raise
-        if resp.status_code == 429 and attempt < 3:
-            time.sleep(int(resp.headers.get("Retry-After", 5)))
-            continue
-        if resp.status_code in (502, 503, 504) and attempt < 3:
-            time.sleep(3 * (attempt + 1))
-            continue
+        if resp.status_code == 429:
+            if attempt < 3:
+                time.sleep(int(resp.headers.get("Retry-After", 5)))
+                continue
+            break  # last attempt: fall through to the RuntimeError below, not raise_for_status
+        if resp.status_code in (502, 503, 504):
+            if attempt < 3:
+                time.sleep(3 * (attempt + 1))
+                continue
+            break
         resp.raise_for_status()
         return resp.json()["results"]["bindings"]
     raise RuntimeError("Wikidata SPARQL endpoint unavailable after retries")
 
 
+# "en,mul" (not just "en"): Wikidata has been migrating person-name labels that don't vary by
+# language onto the language-neutral "mul" code instead of duplicating them per-language, and
+# plenty of entities — Steve Jobs (Q19837) among them — now carry *only* a "mul" label, no "en"
+# one. A label-service call scoped to "en" alone falls back to the raw QID for these, and every
+# _parse_*_rows helper below treats an unresolved (QID-as-label) row as noise and drops it — so
+# without "mul" in the language list, real people/companies silently vanish from every query here.
 def _officers_query(qid: str) -> str:
     return f"""
     SELECT ?person ?personLabel ?positionLabel ?start ?end WHERE {{
       VALUES ?company {{ wd:{qid} }}
-      {{ ?company wdt:P169 ?person . BIND("Chief Executive Officer" AS ?positionLabel) }}
+      {{ ?company p:P169 ?stmt . ?stmt ps:P169 ?person .
+         OPTIONAL {{ ?stmt pq:P580 ?start }} OPTIONAL {{ ?stmt pq:P582 ?end }}
+         BIND("Chief Executive Officer" AS ?positionLabel) }}
       UNION
-      {{ ?company wdt:P488 ?person . BIND("Chairperson" AS ?positionLabel) }}
+      {{ ?company p:P488 ?stmt . ?stmt ps:P488 ?person .
+         OPTIONAL {{ ?stmt pq:P580 ?start }} OPTIONAL {{ ?stmt pq:P582 ?end }}
+         BIND("Chairperson" AS ?positionLabel) }}
       UNION
       {{ ?company p:P3320 ?stmt . ?stmt ps:P3320 ?person .
          OPTIONAL {{ ?stmt pq:P580 ?start }} OPTIONAL {{ ?stmt pq:P582 ?end }}
          BIND("Board Member" AS ?positionLabel) }}
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+      UNION
+      {{ ?company wdt:P112 ?person . BIND("Founder" AS ?positionLabel) }}
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en,mul". }}
     }}
     """
 
@@ -85,19 +107,7 @@ def _career_history_query(person_qid: str) -> str:
       OPTIONAL {{ ?stmt pq:P39 ?position }}
       OPTIONAL {{ ?stmt pq:P580 ?start }}
       OPTIONAL {{ ?stmt pq:P582 ?end }}
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
-    }}
-    """
-
-
-def _tenure_query(person_qid: str) -> str:
-    return f"""
-    SELECT ?positionLabel ?start ?end WHERE {{
-      wd:{person_qid} p:P39 ?stmt .
-      ?stmt ps:P39 ?position .
-      OPTIONAL {{ ?stmt pq:P580 ?start }}
-      OPTIONAL {{ ?stmt pq:P582 ?end }}
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en,mul". }}
     }}
     """
 
@@ -124,42 +134,20 @@ def _overlaps_filing_year(start: str | None, end: str | None) -> bool:
     return True
 
 
-# Wikidata's org-level P169/P488 (CEO/chairperson) only reflect the *current* holder, with no
-# tenure dates — so for these two titles we cross-check against the person's own P39 (position
-# held) history, which does carry start/end qualifiers, to see if they actually held the title
-# during FILING_YEAR (see _matches_filing_year).
-_TITLE_KEYWORDS = {"Chief Executive Officer": "chief executive", "Chairperson": "chair"}
-
-
-def _matches_filing_year(tenure_rows: list[dict], keyword: str) -> bool:
-    """True if a P39 tenure row matching `keyword` overlaps FILING_YEAR.
-
-    No P39 data at all (common for a company's *current* officer, who Wikidata often records
-    only via the org-level P169/P488 claim) can't be confirmed relevant, so it's excluded. But
-    if the person has *some* P39 history just not a dated record of this exact title, or a
-    matching record with no dates, we keep them (better recall than precision from there on).
-    """
-    if not tenure_rows:
-        return False
-    matching = [
-        r for r in tenure_rows if keyword in (r.get("positionLabel", {}).get("value") or "").lower()
-    ]
-    if not matching:
-        return True
-    dated = [r for r in matching if r.get("start") or r.get("end")]
-    if not dated:
-        return True
-    return any(
-        _overlaps_filing_year(r.get("start", {}).get("value"), r.get("end", {}).get("value"))
-        for r in dated
-    )
-
-
 def _parse_officer_rows(rows: list[dict]) -> list[dict]:
-    """Group raw SPARQL officer/board-member bindings into one record per person.
+    """Group raw SPARQL officer/board-member/founder bindings into one record per person.
 
     A person can hold more than one title at the same company (e.g. CEO and board member),
     so each record's `titles` is a list rather than a single flat title.
+
+    FILING_YEAR decides who's *included* in the roster, not which of their titles survive: a
+    person qualifies if any one title is a Founder (always relevant) or overlaps FILING_YEAR;
+    once they qualify, ALL of their titles are kept, including ones that don't themselves
+    overlap FILING_YEAR. Filtering title-by-title instead of person-by-person was the bug found
+    2026-09-01: it silently stripped Steve Jobs's real 1997-2011 "Chief Executive Officer" title
+    (present in the raw SPARQL rows — see _officers_query) even though he'd already qualified via
+    "Founder", because that CEO stint itself predates FILING_YEAR. Once someone is relevant
+    enough to include, their full role history is real information, not noise to re-filter.
     """
     people: dict[str, dict] = {}
     for row in rows:
@@ -170,11 +158,17 @@ def _parse_officer_rows(rows: list[dict]) -> list[dict]:
         title = row["positionLabel"]["value"]
         start = row.get("start", {}).get("value")
         end = row.get("end", {}).get("value")
-        if title == "Board Member" and not _overlaps_filing_year(start, end):
-            continue
         person = people.setdefault(person_qid, {"id": person_qid, "name": name, "titles": []})
         person["titles"].append({"title": title, "start": start, "end": end})
-    return list(people.values())
+
+    return [
+        p
+        for p in people.values()
+        if any(
+            t["title"] == "Founder" or _overlaps_filing_year(t["start"], t["end"])
+            for t in p["titles"]
+        )
+    ]
 
 
 def _parse_career_rows(rows: list[dict]) -> list[dict]:
@@ -227,13 +221,42 @@ def _wikipedia_bio(person_qid: str) -> str | None:
     return summary.json().get("extract")
 
 
+def _reconcile_self_references(titles: list[dict], raw_history: list[dict], company_id: str) -> tuple[list[dict], list[dict]]:
+    """Split a person's P108 career history into (titles gained, career_history at other firms).
+
+    Virtually every officer's P108 ("employer") claims include their own employer — this
+    company — alongside their outside employers, almost always with no P39 title qualifier.
+    That untitled self-reference isn't career history (which is about *other* companies) and
+    would otherwise write a bogus `ROLE_AT {title: "Employee"}` edge duplicating a role already
+    in `titles`. But occasionally the self-reference *does* carry a P39 title Wikidata didn't
+    also record on the org's own P169/P488/P3320/P112 claims (a President, COO, etc. that only
+    shows up on the person's own item) — that's real information, so it's folded into `titles`
+    rather than dropped, as long as it isn't just a case-different restatement of one we already
+    have (observed live: 3M's William Brown has a self-reference titled "chief executive
+    officer" that's exactly his existing "Chief Executive Officer" title, re-arriving lowercase).
+    """
+    titles = list(titles)
+    known = {t["title"].lower() for t in titles}
+    career_history = []
+    for role in raw_history:
+        if role["employer"] != company_id:
+            career_history.append(role)
+            continue
+        if role["title"] and role["title"].lower() not in known:
+            titles.append({"title": role["title"].title(), "start": role["start"], "end": role["end"]})
+            known.add(role["title"].lower())
+    return titles, career_history
+
+
 def load_executives(company_id: str) -> list[dict]:
     """Return executive/board records for a company from Wikidata.
 
     Each record includes `career_history` — prior employers with title and start/end dates,
     pulled from the person's own Wikidata entity (P108 employer claims). This is the data that
     fills the gap Module 2 hit: a 10-K names its officers but defers their career history to a
-    proxy statement that was never ingested.
+    proxy statement that was never ingested. See _reconcile_self_references for how a person's
+    own P108 claim about *this* company (as distinct from their other employers) gets folded
+    back into `titles` instead of duplicating it or leaking through as career_history.
     """
     qid = COMPANY_WIKIDATA_QID[company_id]
     people = _parse_officer_rows(_sparql(_officers_query(qid)))
@@ -243,26 +266,15 @@ def load_executives(company_id: str) -> list[dict]:
         if i > 0:
             time.sleep(1)  # stay well under Wikidata's SPARQL rate limit
 
-        titles = person["titles"]
-        undated_titles = [t for t in titles if t["title"] in _TITLE_KEYWORDS]
-        if undated_titles:
-            tenure_rows = _sparql(_tenure_query(person["id"]))
-            titles = [
-                t
-                for t in titles
-                if t["title"] not in _TITLE_KEYWORDS
-                or _matches_filing_year(tenure_rows, _TITLE_KEYWORDS[t["title"]])
-            ]
-        if not titles:
-            continue  # e.g. the current CEO/chairperson, but not as of FILING_YEAR
-
+        raw_history = _parse_career_rows(_sparql(_career_history_query(person["id"])))
+        titles, career_history = _reconcile_self_references(person["titles"], raw_history, company_id)
         executives.append(
             {
                 "id": person["id"],
                 "name": person["name"],
                 "titles": titles,
                 "bio": _wikipedia_bio(person["id"]),
-                "career_history": _parse_career_rows(_sparql(_career_history_query(person["id"]))),
+                "career_history": career_history,
             }
         )
     return executives
@@ -280,7 +292,7 @@ def _profile_query(qid: str) -> str:
         ?exchangeStmt ps:P414 ?exchange .
         OPTIONAL {{ ?exchangeStmt pq:P249 ?ticker }}
       }}
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en,mul". }}
     }}
     """
 
@@ -291,7 +303,7 @@ def _structure_query(qid: str) -> str:
       {{ wd:{qid} wdt:P749 ?company . BIND("parent" AS ?relation) }}
       UNION
       {{ wd:{qid} wdt:P355 ?company . BIND("subsidiary" AS ?relation) }}
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+      SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en,mul". }}
     }}
     """
 
@@ -374,11 +386,31 @@ def _parse_nyt_docs(docs: list[dict]) -> list[dict]:
     ]
 
 
+def _nyt_get(params: dict) -> dict:
+    # NYT's free-tier limit is 5 requests PER MINUTE (not per second — a previous version of
+    # this comment had that wrong by 60x, which is exactly why load_news used to hit 429s so
+    # fast: a 6s inter-page sleep is a ~10 req/min pace, already double the real limit), plus
+    # 500 requests/day. Retry with backoff (honoring Retry-After when NYT sends one) rather than
+    # crashing on the first 429, matching the pattern _sparql already uses for Wikidata.
+    for attempt in range(4):
+        resp = httpx.get(NYT_SEARCH_URL, params=params, timeout=20)
+        if resp.status_code == 429:
+            if attempt < 3:
+                time.sleep(int(resp.headers.get("Retry-After", 30)))
+                continue
+            break  # last attempt: fall through to the RuntimeError below, not raise_for_status
+        resp.raise_for_status()
+        return resp.json()
+    raise RuntimeError("NYT Article Search API unavailable after retries (rate-limited)")
+
+
 def load_news(company_id: str, start_date: str, end_date: str) -> list[dict]:
     """Return news articles mentioning the company from the NYT Article Search API.
 
     start_date/end_date are "YYYY-MM-DD" strings. Paginates a handful of pages, sleeping
-    between requests to stay well under NYT's free-tier rate limit (5 req/sec, 500 req/day).
+    between requests to stay under NYT's actual free-tier rate limit — 5 requests/minute (see
+    _nyt_get) — so calling this for multiple companies back-to-back (as the notebook does)
+    doesn't burn through it either.
     """
     if not settings.nyt_api_key:
         raise RuntimeError(
@@ -389,24 +421,23 @@ def load_news(company_id: str, start_date: str, end_date: str) -> list[dict]:
     query_name = COMPANY_DISPLAY_NAME.get(company_id, company_id)
     articles: list[dict] = []
     for page in range(3):
-        resp = httpx.get(
-            NYT_SEARCH_URL,
-            params={
+        data = _nyt_get(
+            {
                 "q": query_name,
                 "begin_date": start_date.replace("-", ""),
                 "end_date": end_date.replace("-", ""),
                 "api-key": settings.nyt_api_key,
                 "page": page,
-            },
-            timeout=20,
+            }
         )
-        resp.raise_for_status()
-        docs = resp.json()["response"]["docs"]
+        docs = data["response"]["docs"]
         if not docs:
             break
         articles.extend(_parse_nyt_docs(docs))
-        if page < 2:
-            time.sleep(6)
+        # 60s / 5 requests, plus margin. Sleep even after the last page of this call (not just
+        # between pages) so a follow-up load_news call for another company — the notebook loops
+        # over 3M/APPLE back-to-back — doesn't restart the pace from zero.
+        time.sleep(13)
     return articles
 
 
@@ -508,8 +539,9 @@ def load_fundamentals(ticker: str, dimension: str = "ARY") -> list[dict]:
 # Verified against a live response for MMM (2026-08-26): the `action` taxonomy for a single
 # ticker is small (dividend, spinoff, spinoffdividend) but "dividend" recurs quarterly forever —
 # 39 of 42 rows for MMM alone — and drowns out the one-off events (e.g. the 2024-04-01 Solventum
-# spinoff) that HAD_EVENT is meant to surface. adr/0005 only ever intended splits/spinoffs/
-# mergers/name changes here, so "dividend" is excluded; nothing else observed so far warrants it.
+# spinoff) that HAD_EVENT is meant to surface. adr/0005 originally hoped for mergers/name changes
+# too, but neither has ever actually shown up for MMM or AAPL — so "dividend" is excluded because
+# it's noise, not because the rest of the intended taxonomy is present and just needs filtering.
 EXCLUDED_ACTIONS = {"dividend"}
 
 
@@ -530,11 +562,16 @@ def _parse_actions_rows(rows: list[dict]) -> list[dict]:
 
 
 def load_corporate_actions(ticker: str) -> list[dict]:
-    """Return dated corporate actions (splits, spinoffs, mergers, name changes, ...) for a
-    ticker from Sharadar's actions endpoint — this is what backs the graph's `Event` nodes.
+    """Return dated corporate actions for a ticker from Sharadar's actions endpoint — this is
+    what backs the graph's `Event` nodes.
 
-    Excludes routine dividend entries (see EXCLUDED_ACTIONS) — everything else Sharadar returns
-    is passed through as-is.
+    ADR 0005 originally assumed this table would cover mergers and legal name changes alongside
+    splits/spinoffs; checked live (2026-08-26, MMM and AAPL), the real `action` taxonomy this
+    endpoint has ever returned for either ticker is just dividend/spinoff/spinoffdividend/split
+    — no merger or name-change action type has been observed. Treat "mergers, name changes" as
+    NOT covered by this source; a question asking for those needs a different one entirely (this
+    endpoint has no such data to be fetched with different arguments). Excludes routine dividend
+    entries (see EXCLUDED_ACTIONS) — everything else Sharadar returns is passed through as-is.
     """
     rows = _sharadar_get("actions", ACTIONS_COLUMNS, ticker=ticker)
     return _parse_actions_rows(rows)

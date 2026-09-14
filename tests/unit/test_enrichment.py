@@ -1,7 +1,7 @@
 import pytest
 
 from financial_advisor.enrichment.loaders import (
-    _matches_filing_year,
+    _nyt_get,
     _overlaps_filing_year,
     _parse_actions_rows,
     _parse_career_rows,
@@ -11,7 +11,9 @@ from financial_advisor.enrichment.loaders import (
     _parse_sf1_rows,
     _parse_structure_rows,
     _parse_tickers_row,
+    _reconcile_self_references,
     load_corporate_actions,
+    load_executives,
     load_fundamentals,
     load_news,
     load_sector_classification,
@@ -81,46 +83,172 @@ def test_parse_officer_rows_filters_board_member_outside_filing_year():
     assert [p["name"] for p in people] == ["Current Member"]
 
 
+def test_parse_officer_rows_filters_dated_ceo_outside_filing_year():
+    # Regression: P169/P488 statements now carry their own start/end qualifiers (queried via
+    # p:/ps:/pq: rather than the truthy wdt: shortcut, which only surfaces the best-ranked
+    # statement and can drop the officer actually in office during FILING_YEAR), so CEO/
+    # chairperson rows are scoped by date exactly like board members.
+    rows = [
+        {
+            "person": {"value": "http://www.wikidata.org/entity/Q1"},
+            **_binding(
+                personLabel="Former CEO",
+                positionLabel="Chief Executive Officer",
+                start="2000-01-01T00:00:00Z",
+                end="2010-01-01T00:00:00Z",
+            ),
+        },
+        {
+            "person": {"value": "http://www.wikidata.org/entity/Q2"},
+            **_binding(
+                personLabel="Current CEO",
+                positionLabel="Chief Executive Officer",
+                start="2015-01-01T00:00:00Z",
+            ),
+        },
+    ]
+    people = _parse_officer_rows(rows)
+    assert [p["name"] for p in people] == ["Current CEO"]
+
+
+def test_parse_officer_rows_keeps_founders_regardless_of_filing_year():
+    rows = [
+        {
+            "person": {"value": "http://www.wikidata.org/entity/Q1"},
+            **_binding(personLabel="Company Founder", positionLabel="Founder"),
+        },
+    ]
+    people = _parse_officer_rows(rows)
+    assert [p["name"] for p in people] == ["Company Founder"]
+
+
+def test_parse_officer_rows_keeps_full_history_once_person_qualifies():
+    # Regression: Steve Jobs qualifies for Apple's roster via "Founder" (exempt from
+    # FILING_YEAR), and Wikidata's raw P169 rows do carry his real 1997-2011 "Chief Executive
+    # Officer" stint (see _officers_query) — that title must survive too, not get silently
+    # stripped just because it individually predates FILING_YEAR while Founder is what let him
+    # in. Filtering was previously done per-title-row instead of per-person.
+    rows = [
+        {
+            "person": {"value": "http://www.wikidata.org/entity/Q19837"},
+            **_binding(personLabel="Steve Jobs", positionLabel="Founder"),
+        },
+        {
+            "person": {"value": "http://www.wikidata.org/entity/Q19837"},
+            **_binding(
+                personLabel="Steve Jobs",
+                positionLabel="Chief Executive Officer",
+                start="1997-09-01T00:00:00Z",
+                end="2011-08-23T00:00:00Z",
+            ),
+        },
+    ]
+    people = _parse_officer_rows(rows)
+    assert len(people) == 1
+    assert [t["title"] for t in people[0]["titles"]] == ["Founder", "Chief Executive Officer"]
+
+
+def test_load_executives_excludes_self_referential_career_history(monkeypatch):
+    # Regression: a person's own P108 "employer" claims include the very company we're loading
+    # executives for, almost always with no P39 title qualifier — left in, that landed as a
+    # spurious ROLE_AT{title:"Employee"} edge duplicating the real title already in `titles`.
+    officer_rows = [
+        {
+            "person": {"value": "http://www.wikidata.org/entity/Q1"},
+            **_binding(
+                personLabel="Jane CEO",
+                positionLabel="Chief Executive Officer",
+                start="2015-01-01T00:00:00Z",
+            ),
+        },
+    ]
+    career_rows = [
+        {
+            "employer": {"value": "http://www.wikidata.org/entity/Q312"},
+            **_binding(employerLabel="Apple Inc."),  # self-reference: no title, no dates
+        },
+        {
+            "employer": {"value": "http://www.wikidata.org/entity/Q37156"},
+            **_binding(
+                employerLabel="IBM", start="2000-01-01T00:00:00Z", end="2014-01-01T00:00:00Z"
+            ),
+        },
+    ]
+
+    def fake_sparql(query):
+        return career_rows if "P108" in query else officer_rows
+
+    monkeypatch.setattr("financial_advisor.enrichment.loaders._sparql", fake_sparql)
+    monkeypatch.setattr("financial_advisor.enrichment.loaders._wikipedia_bio", lambda qid: None)
+    monkeypatch.setattr("financial_advisor.enrichment.loaders.COMPANY_WIKIDATA_QID", {"APPLE": "Q312"})
+
+    executives = load_executives("APPLE")
+    assert len(executives) == 1
+    assert [h["employer"] for h in executives[0]["career_history"]] == ["IBM"]
+
+
+def test_reconcile_self_references_drops_untitled_self_reference():
+    # The common case (Tim Cook, Mike Roman, ...): a self-reference with a start date (their
+    # actual hire date) but no P39 title — not a role, so it's dropped rather than surfacing as
+    # a bogus generic "Employee" title or as fake career_history at the company we're loading for.
+    titles = [{"title": "Chief Executive Officer", "start": "2011-01-01T00:00:00Z", "end": None}]
+    raw_history = [
+        {"employer": "APPLE", "employer_qid": "Q312", "title": None, "start": "1998-01-01T00:00:00Z", "end": None},
+        {"employer": "IBM", "employer_qid": "Q37156", "title": None, "start": "1982-01-01T00:00:00Z", "end": None},
+    ]
+    new_titles, career_history = _reconcile_self_references(titles, raw_history, "APPLE")
+    assert new_titles == titles
+    assert [h["employer"] for h in career_history] == ["IBM"]
+
+
+def test_reconcile_self_references_folds_in_a_genuinely_new_title():
+    # A self-reference can carry a P39 title that isn't on any of the org-level P169/P488/
+    # P3320/P112 claims (e.g. a President or COO Wikidata only recorded on the person's own
+    # item) — that's real information the org-level query missed, so it's added to titles.
+    titles = [{"title": "Board Member", "start": "2015-01-01T00:00:00Z", "end": None}]
+    raw_history = [
+        {
+            "employer": "APPLE",
+            "employer_qid": "Q312",
+            "title": "chief operating officer",
+            "start": "2007-01-01T00:00:00Z",
+            "end": "2011-08-24T00:00:00Z",
+        },
+    ]
+    new_titles, career_history = _reconcile_self_references(titles, raw_history, "APPLE")
+    assert new_titles == [
+        titles[0],
+        {"title": "Chief Operating Officer", "start": "2007-01-01T00:00:00Z", "end": "2011-08-24T00:00:00Z"},
+    ]
+    assert career_history == []
+
+
+def test_reconcile_self_references_skips_case_different_duplicate_title():
+    # Regression, observed live on 3M: William Brown's self-reference is titled "chief
+    # executive officer" — a case-different restatement of the "Chief Executive Officer" title
+    # already captured from P169. Folding it in blindly would create a near-duplicate ROLE_AT
+    # edge differing only by title casing.
+    titles = [{"title": "Chief Executive Officer", "start": "2024-05-01T00:00:00Z", "end": None}]
+    raw_history = [
+        {
+            "employer": "3M",
+            "employer_qid": "Q159433",
+            "title": "chief executive officer",
+            "start": "2024-05-01T00:00:00Z",
+            "end": None,
+        },
+    ]
+    new_titles, career_history = _reconcile_self_references(titles, raw_history, "3M")
+    assert new_titles == titles
+    assert career_history == []
+
+
 def test_overlaps_filing_year():
     assert _overlaps_filing_year(None, None) is True
     assert _overlaps_filing_year("2015-01-01T00:00:00Z", None) is True
-    assert _overlaps_filing_year("2019-01-01T00:00:00Z", None) is False
+    assert _overlaps_filing_year("2030-01-01T00:00:00Z", None) is False
     assert _overlaps_filing_year(None, "2017-01-01T00:00:00Z") is False
-    assert _overlaps_filing_year("2010-01-01T00:00:00Z", "2020-01-01T00:00:00Z") is True
-
-
-def test_matches_filing_year_false_when_no_tenure_data_at_all():
-    assert _matches_filing_year([], "chief executive") is False
-
-
-def test_matches_filing_year_true_when_no_matching_title():
-    assert _matches_filing_year([{"positionLabel": {"value": "senator"}}], "chief executive") is True
-
-
-def test_matches_filing_year_true_when_matching_title_has_no_dates():
-    rows = [{"positionLabel": {"value": "chief executive officer"}}]
-    assert _matches_filing_year(rows, "chief executive") is True
-
-
-def test_matches_filing_year_false_when_dated_tenure_excludes_filing_year():
-    rows = [
-        {
-            "positionLabel": {"value": "chief executive officer"},
-            "start": {"value": "2024-05-01T00:00:00Z"},
-        }
-    ]
-    assert _matches_filing_year(rows, "chief executive") is False
-
-
-def test_matches_filing_year_true_when_dated_tenure_covers_filing_year():
-    rows = [
-        {
-            "positionLabel": {"value": "chief executive officer"},
-            "start": {"value": "2018-07-01T00:00:00Z"},
-            "end": {"value": "2024-05-01T00:00:00Z"},
-        }
-    ]
-    assert _matches_filing_year(rows, "chief executive") is True
+    assert _overlaps_filing_year("2010-01-01T00:00:00Z", "2030-01-01T00:00:00Z") is True
 
 
 def test_parse_career_rows_skips_unresolved_employer_labels():
@@ -166,6 +294,60 @@ def test_load_news_raises_without_api_key(monkeypatch):
     monkeypatch.setattr("financial_advisor.enrichment.loaders.settings.nyt_api_key", "")
     with pytest.raises(RuntimeError, match="NYT_API_KEY"):
         load_news("3M", "2018-01-01", "2018-12-31")
+
+
+class _FakeNYTResponse:
+    def __init__(self, status_code, headers=None, payload=None):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._payload = payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import httpx
+
+            raise httpx.HTTPStatusError(
+                "error", request=httpx.Request("GET", "https://api.nytimes.com"), response=self
+            )
+
+    def json(self):
+        return self._payload
+
+
+def test_nyt_get_retries_on_429_honoring_retry_after(monkeypatch):
+    # Regression: NYT's free-tier limit is 5 requests/MINUTE, not /second (a stale comment had
+    # this off by 60x, which is why load_news used to hit 429s so fast). A 429 shouldn't crash
+    # the whole load — retry with backoff, honoring Retry-After when NYT sends one, same as
+    # _sparql already does for Wikidata's endpoint.
+    sleeps = []
+    monkeypatch.setattr("financial_advisor.enrichment.loaders.time.sleep", sleeps.append)
+
+    responses = [
+        _FakeNYTResponse(429, headers={"Retry-After": "2"}),
+        _FakeNYTResponse(200, payload={"response": {"docs": []}}),
+    ]
+    calls = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(params)
+        return responses.pop(0)
+
+    monkeypatch.setattr("financial_advisor.enrichment.loaders.httpx.get", fake_get)
+
+    result = _nyt_get({"q": "3M"})
+    assert result == {"response": {"docs": []}}
+    assert sleeps == [2]
+    assert len(calls) == 2
+
+
+def test_nyt_get_gives_up_after_exhausting_retries(monkeypatch):
+    monkeypatch.setattr("financial_advisor.enrichment.loaders.time.sleep", lambda *_: None)
+    monkeypatch.setattr(
+        "financial_advisor.enrichment.loaders.httpx.get",
+        lambda *a, **k: _FakeNYTResponse(429, headers={"Retry-After": "1"}),
+    )
+    with pytest.raises(RuntimeError, match="rate-limited"):
+        _nyt_get({"q": "3M"})
 
 
 def test_parse_profile_rows_takes_first_non_null_per_field():
