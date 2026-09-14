@@ -27,6 +27,17 @@ class RelationshipType(StrEnum):
 
 class ExtractedEntity(BaseModel):
     string: str = Field(description="Entity name exactly as it appears in the text")
+    resolved_string: str = Field(
+        description=(
+            "The canonical entity this mention refers to. Equal to `string` for a normal, "
+            "distinct mention. When this mention is actually a coreference of a DIFFERENT "
+            "entity already in the settled entity list (e.g. a defined term like 'the Company' "
+            "standing in for a name given elsewhere, or an abbreviation for its spelled-out "
+            "form), set this to that other entity's own `string` instead — never a canonical "
+            "form that isn't itself one of the settled entities. `string` always keeps the "
+            "literal text as it actually appeared, regardless of resolution."
+        )
+    )
     type: EntityType
     description: str | None = Field(default=None, description="Brief context from the chunk")
 

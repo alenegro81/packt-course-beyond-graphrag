@@ -23,9 +23,8 @@ def main() -> None:
         doc = Document(page_content=row["text"], metadata={"id": row["id"]})
 
         entity_result = extract_entities(doc)
-        relationship_result = extract_relationships(
-            doc, [e.string for e in entity_result.entities]
-        )
+        known_entities = sorted({e.resolved_string for e in entity_result.entities})
+        relationship_result = extract_relationships(doc, known_entities)
         write_extraction_to_graph(
             entity_result.entities,
             relationship_result.relationships,
