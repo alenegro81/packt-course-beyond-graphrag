@@ -14,6 +14,7 @@ def get_llm(temperature: float = 1) -> AzureChatOpenAI:
         api_version=settings.azure_openai_api_version,
         api_key=settings.azure_openai_api_key,
         temperature=temperature,
+        max_retries=6,
     )
 
 

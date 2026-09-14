@@ -59,12 +59,12 @@ def _relationship_patterns() -> str:
 def get_schema_description() -> str:
     """Return a formatted description of the current graph schema for use in prompts.
 
-    Built from Neo4j's core `db.schema.*` procedures rather than langchain's
-    `Neo4jGraph.schema` — that helper requires the APOC plugin (`apoc.meta.data`), which is
-    installed on this project's Neo4j instance but sandboxed/restricted at the server-config
-    level (`dbms.security.procedures.unrestricted`), so it's unusable regardless.
+    Built from Neo4j's core `db.schema.*` procedures rather than langchain's `Neo4jGraph.schema`.
+    APOC is available on this project's Neo4j instance, but `Neo4jGraph.schema` is deliberately
+    not used: it produces one flat text blob with no relationship-pattern section and no
+    per-property nullability signal, both of which this module relies on directly (see below).
     `db.schema.nodeTypeProperties`/`relTypeProperties`/`visualization` ship with Neo4j itself and
-    need no plugin or config change.
+    need no plugin.
 
     A property suffixed `?` (e.g. `name: String?`) is not present on every node/relationship of
     that label/type, per `mandatory: false` from `db.schema.nodeTypeProperties`/

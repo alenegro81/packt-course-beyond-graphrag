@@ -7,7 +7,7 @@ DISALLOWED_PATTERNS = [
     r"\bDELETE\b",
     r"\bDETACH\b",
     r"\bDROP\b",
-    r"\bCREATE\b(?!.*RETURN)",  # CREATE without RETURN (write without read)
+    r"\bCREATE\b",
     r"\bMERGE\b",
     r"\bSET\b",
     r"\bREMOVE\b",

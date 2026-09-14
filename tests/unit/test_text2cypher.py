@@ -20,6 +20,7 @@ def test_valid_read_queries(query):
     "MATCH (c:Company) DELETE c",
     "MERGE (p:Person {name: 'Test'})",
     "MATCH (c:Company) SET c.revenue = 0",
+    "CREATE (n:Malicious {x: 1}) RETURN n",
 ])
 def test_disallowed_write_queries(query):
     ok, _ = validate_cypher(query)
