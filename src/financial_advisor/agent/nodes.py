@@ -19,7 +19,7 @@ from financial_advisor.agent.state import AgentState, AnswerGrade, RetrievalGrad
 from financial_advisor.agent.tools import TOOLS_BY_NAME
 from financial_advisor.similarity.rerank import deduplicate_by_similarity
 
-MAX_RETRIEVAL_ITERATIONS = 4
+MAX_RETRIEVAL_ITERATIONS = 6
 MAX_ANSWER_ATTEMPTS = 3
 
 
