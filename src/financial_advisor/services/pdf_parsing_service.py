@@ -56,7 +56,7 @@ class PdfParsingService:
             tokenizer=AutoTokenizer.from_pretrained("jinaai/jina-embeddings-v2-base-en"),
             max_tokens=chunk_max_tokens,
         )
-        self.chunker = HybridChunker(tokenizer=tokenizer, merge_peers=True)
+        self.chunker = HybridChunker(tokenizer=tokenizer, merge_peers=True) #https://docling-project.github.io/docling/concepts/chunking/#introduction
 
     def convert_pdf(self, path: Path):
         """Return a Docling ConversionResult, or None if the conversion fails."""

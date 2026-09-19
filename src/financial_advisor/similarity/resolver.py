@@ -17,6 +17,7 @@ RESOLUTION_ORDER = [
     EntityType.PRODUCT,
     EntityType.LOCATION,
     EntityType.REGULATION,
+    EntityType.FILING,
     EntityType.RISK,
     EntityType.FINANCIAL_METRIC,
 ]

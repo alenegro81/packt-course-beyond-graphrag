@@ -9,6 +9,7 @@ class EntityType(StrEnum):
     PRODUCT = "Product"
     LOCATION = "Location"
     REGULATION = "Regulation"
+    FILING = "Filing"
     RISK = "Risk"
     FINANCIAL_METRIC = "FinancialMetric"
 

@@ -5,8 +5,8 @@ from financial_advisor.services.neo4j_service import neo4j_service
 from financial_advisor.similarity.validators import CandidateNode
 
 # Entity types with a curated Module 1/3 counterpart worth reconciling extracted mentions
-# against. The others (Product, Location, Regulation, Risk, FinancialMetric) only ever exist as
-# RecognisedEntity mentions, so their pool is extraction-only.
+# against. The others (Product, Location, Regulation, Filing, Risk, FinancialMetric) only ever
+# exist as RecognisedEntity mentions, so their pool is extraction-only.
 _CURATED_LABEL_BY_TYPE = {
     EntityType.COMPANY: "Company",
     EntityType.PERSON: "Person",

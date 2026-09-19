@@ -124,7 +124,7 @@ def get_recognised_entities(doc_id: str, entity_type: str | None = None) -> list
     Source: this project's own Neo4j `RecognisedEntity` nodes (Module 4) — an LLM's structured
     read of the filing text, not the raw text itself and not a vetted external source like
     Wikidata/Sharadar. entity_type is one of Company, Person, Product, Location, Regulation,
-    Risk, FinancialMetric (omit to get all). Use for "what does this filing mention" questions
+    Filing, Risk, FinancialMetric (omit to get all). Use for "what does this filing mention" questions
     about a specific doc_id — e.g. subsidiaries, named regulations, products, risk topics — where
     you want a complete, deduplicated list rather than whatever a text search happens to surface.
     Only covers chunks that have already been through extraction; if it returns nothing, fall

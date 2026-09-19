@@ -40,8 +40,15 @@ def retrieve_chunks(query_vector: list[float], k: int = 5) -> list[RetrievedChun
     """Top-k chunks by cosine similarity against the chunk_embedding vector index."""
     rows = neo4j_service.run_query(
         """
-        CALL db.index.vector.queryNodes('chunk_embedding', $k, $vector)
-        YIELD node, score
+        CYPHER 25
+        WITH $vector AS embedding
+        MATCH (chunk: Chunk)
+        SEARCH chunk IN (
+            VECTOR INDEX chunk_embedding
+            FOR embedding
+            LIMIT $k
+        ) SCORE AS score
+        WITH chunk as node, score
         RETURN node.id AS id, node.text AS text, node.doc_id AS doc_id,
                node.company_id AS company_id, score
         ORDER BY score DESC

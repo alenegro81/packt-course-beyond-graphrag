@@ -100,7 +100,7 @@ def get_financials(company_id: str) -> list[dict]:
 
 def get_recognised_entities(doc_id: str, entity_type: str | None = None) -> list[dict]:
     """Return LLM-extracted entities (Module 4) mentioned in a single document, optionally
-    filtered by type (Company, Person, Product, Location, Regulation, Risk, FinancialMetric).
+    filtered by type (Company, Person, Product, Location, Regulation, Filing, Risk, FinancialMetric).
 
     Source: RecognisedEntity nodes, keyed (string, doc_id) — see adr/0007. Not merged across
     documents or reconciled against curated Company/Person nodes yet (Module 5's job), so the
